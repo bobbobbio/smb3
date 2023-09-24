@@ -1,0 +1,22 @@
+[profile.release]
+opt-level = 3
+debug = true
+panic = "abort"
+lto = "thin"
+
+[profile.release.package."*"]
+opt-level = 3
+debug = true
+
+[profile.dev]
+debug = true
+panic = "abort"
+
+[workspace]
+resolver = "2"
+members = [
+    "cli",
+    "serde_smb",
+    "smb3",
+    "smb3_client",
+]

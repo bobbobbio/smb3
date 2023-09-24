@@ -1,0 +1,17 @@
+[package]
+name = "serde_smb"
+version = "0.1.0"
+edition = "2021"
+description = "serde serialization for use with MS-SMB structures"
+license = "MIT"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+count-write = "^0.1"
+derive_more = "^0.99"
+serde = { version = "^1", features = ["derive"] }
+byteorder = "^1.4"
+
+[dev-dependencies]
+smb3 = { version = "^0.1", path = "../smb3" }
