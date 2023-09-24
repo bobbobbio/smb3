@@ -18,4 +18,4 @@ sha2 = "^0.10"
 serde = { version = "^1", features = ["derive"] }
 serde_smb = { path = "../serde_smb", version = "^0.1" }
 smb3 = { path = "../smb3", version = "^0.1" }
-sspi = { git = "https://github.com/bobbobbio/sspi-rs" }
+sspi = { git = "https://github.com/bobbobbio/sspi-rs", rev = "f032e9b2274ff5c9c0c4d685e9bbd74455481b7a" }
