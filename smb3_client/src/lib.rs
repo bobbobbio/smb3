@@ -1,3 +1,5 @@
+use sspi_bobbobbio as sspi;
+
 use byteorder::{BigEndian, ReadBytesExt as _, WriteBytesExt as _};
 use cmac::Mac as _;
 use derive_more::From;
@@ -254,11 +256,11 @@ impl<TransportT: Transport> Client<TransportT> {
             )?;
         }
 
-        let session_key = ntlm.session_key.as_ref().unwrap();
+        let session_key = ntlm.session_key().unwrap();
         assert_eq!(session_key.len(), 16);
         let signing_key = sp800_108_counter_kdf(
             16,
-            session_key,
+            &session_key,
             b"SMBSigningKey\0",
             &unauth_client.pre_auth_hash,
         );
