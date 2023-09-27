@@ -853,7 +853,7 @@ pub struct TreeConnectRequest {
     pub path_offset: u16,
     #[serde(rename = "path$count")]
     pub path_length: u16,
-    pub path: Vec<u8>,
+    pub path: String,
 }
 
 #[derive(SerializeWithDiscriminant, DeserializeWithDiscriminant, Copy, Clone, Debug, PartialEq)]
@@ -945,4 +945,237 @@ pub struct TreeConnectResponse {
     pub share_flags: ShareFlags,
     pub share_capabilities: ShareCapabilities,
     pub access_mask: AccessMask,
+}
+
+#[derive(SerializeWithDiscriminant, DeserializeWithDiscriminant, Copy, Clone, Debug, PartialEq)]
+#[repr(u8)]
+pub enum OplockLevel {
+    None = 0x00,
+    II = 0x01,
+    Exclusive = 0x08,
+    Batch = 0x09,
+    Lease = 0xFF,
+}
+
+#[derive(SerializeWithDiscriminant, DeserializeWithDiscriminant, Copy, Clone, Debug, PartialEq)]
+#[repr(u32)]
+pub enum ImpersonationLevel {
+    Anonymous = 0x00000000,
+    Identification = 0x00000001,
+    Impersonation = 0x00000002,
+    Delegate = 0x00000003,
+}
+
+bitflags! {
+    #[derive(PartialEq, Eq, Copy, Clone, Debug)]
+    pub struct FileAttributes: u32 {
+        const READONLY              = 0x00000001;
+        const HIDDEN                = 0x00000002;
+        const SYSTEM                = 0x00000004;
+        const DIRECTORY             = 0x00000010;
+        const ARCHIVE               = 0x00000020;
+        const NORMAL                = 0x00000080;
+        const TEMPORARY             = 0x00000100;
+        const SPARSE_FILE           = 0x00000200;
+        const REPARSE_POINT         = 0x00000400;
+        const COMPRESSED            = 0x00000800;
+        const OFFLINE               = 0x00001000;
+        const NOT_CONTENT_INDEXED   = 0x00002000;
+        const ENCRYPTED             = 0x00004000;
+        const INTEGRITY_STREAM      = 0x00008000;
+        const NO_SCRUB_DATA         = 0x00020000;
+        const RECALL_ON_OPEN        = 0x00040000;
+        const PINNED                = 0x00080000;
+        const UNPINNED              = 0x00100000;
+        const RECALL_ON_DATA_ACCESS = 0x00400000;
+    }
+}
+
+impl_serde_for_bitflags!(FileAttributes);
+
+bitflags! {
+    #[derive(PartialEq, Eq, Copy, Clone, Debug)]
+    pub struct FileShareAccess: u32 {
+        const READ   = 0x00000001;
+        const WRITE  = 0x00000002;
+        const DELETE = 0x00000004;
+    }
+}
+
+impl_serde_for_bitflags!(FileShareAccess);
+
+bitflags! {
+    #[derive(PartialEq, Eq, Copy, Clone, Debug)]
+    pub struct FileCreateDisposition: u32 {
+        const SUPERSEDE    = 0x00000000;
+        const OPEN         = 0x00000001;
+        const CREATE       = 0x00000002;
+        const OPEN_IF      = 0x00000003;
+        const OVERWRITE    = 0x00000004;
+        const OVERWRITE_IF = 0x00000005;
+    }
+}
+
+impl_serde_for_bitflags!(FileCreateDisposition);
+
+bitflags! {
+    #[derive(PartialEq, Eq, Copy, Clone, Debug)]
+    pub struct FileCreateOptions: u32 {
+        const DIRECTORY_FILE            = 0x00000001;
+        const WRITE_THROUGH             = 0x00000002;
+        const SEQUENTIAL_ONLY           = 0x00000004;
+        const NO_INTERMEDIATE_BUFFERING = 0x00000008;
+        const SYNCHRONOUS_IO_ALERT      = 0x00000010;
+        const SYNCHRONOUS_IO_NONALERT   = 0x00000020;
+        const NON_DIRECTORY_FILE        = 0x00000040;
+        const COMPLETE_IF_OPLOCKED      = 0x00000100;
+        const NO_EA_KNOWLEDGE           = 0x00000200;
+        const RANDOM_ACCESS             = 0x00000800;
+        const DELETE_ON_CLOSE           = 0x00001000;
+        const OPEN_BY_FILE_ID           = 0x00002000;
+        const OPEN_FOR_BACKUP_INTENT    = 0x00004000;
+        const NO_COMPRESSION            = 0x00008000;
+        const OPEN_REMOTE_INSTANCE      = 0x00000400;
+        const OPEN_REQUIRING_OPLOCK     = 0x00010000;
+        const DISALLOW_EXCLUSIVE        = 0x00020000;
+        const RESERVE_OPFILTER          = 0x00100000;
+        const OPEN_REPARSE_POINT        = 0x00200000;
+        const OPEN_NO_RECALL            = 0x00400000;
+        const OPEN_FOR_FREE_SPACE_QUERY = 0x00800000;
+    }
+}
+
+impl_serde_for_bitflags!(FileCreateOptions);
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct CreateRequest {
+    pub size: u16,
+    pub security_flags: u8,
+    pub requested_oplock_level: OplockLevel,
+    pub impersonation_level: ImpersonationLevel,
+    pub create_flags: u64,
+    pub reserved: u64,
+    pub desired_access: AccessMask,
+    pub file_attributes: FileAttributes,
+    pub share_access: FileShareAccess,
+    pub create_disposition: FileCreateDisposition,
+    pub create_options: FileCreateOptions,
+    #[serde(rename = "name$offset")]
+    pub name_offset: u16,
+    #[serde(rename = "name$count")]
+    pub name_length: u16,
+    #[serde(rename = "create_contexts$offset")]
+    pub create_context_offset: u32,
+    #[serde(rename = "create_contexts$count")]
+    pub create_context_length: u32,
+    pub name: Vec<u8>,
+    pub create_contexts: Vec<u8>,
+}
+
+#[derive(Serialize, Deserialize, Copy, Clone, Debug, PartialEq)]
+pub struct FileId {
+    pub persistent: u64,
+    pub volatile: u64,
+}
+
+bitflags! {
+    #[derive(PartialEq, Eq, Copy, Clone, Debug)]
+    pub struct FileCreateAction: u32 {
+        const SUPERSEDED  = 0x00000000;
+        const OPENED      = 0x00000001;
+        const CREATED     = 0x00000002;
+        const OVERWRITTEN = 0x00000003;
+    }
+}
+
+impl_serde_for_bitflags!(FileCreateAction);
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct CreateResponse {
+    pub size: u16,
+    pub oplock_level: OplockLevel,
+    pub reparse_point: bool,
+    pub create_action: FileCreateAction,
+    pub create_time: Time,
+    pub last_access_time: Time,
+    pub last_write_time: Time,
+    pub change_time: Time,
+    pub allocation_size: u64,
+    pub end_of_file: u64,
+    pub file_attributes: FileAttributes,
+    pub reserved: u32,
+    pub file_id: FileId,
+    #[serde(rename = "create_contexts$offset")]
+    pub create_context_offset: u32,
+    #[serde(rename = "create_contexts$count")]
+    pub create_context_length: u32,
+    pub create_contexts: Vec<u8>,
+}
+
+#[derive(SerializeWithDiscriminant, DeserializeWithDiscriminant, Copy, Clone, Debug, PartialEq)]
+#[repr(u8)]
+pub enum FileInformationClass {
+    FileDirectoryInformation = 0x01,
+    FileFullDirectoryInformation = 0x02,
+    FileIdFullDirectoryInformation = 0x26,
+    FileBothDirectoryInformation = 0x03,
+    FileIdBothDirectoryInformation = 0x25,
+    FileNamesInformation = 0x0C,
+    FileIdExtdDirectoryInformation = 0x3C,
+}
+
+bitflags! {
+    #[derive(PartialEq, Eq, Copy, Clone, Debug)]
+    pub struct QueryDirectoryFlags: u8 {
+        const RESTART_SCANS = 0x01;
+        const RETURN_SINGLE_ENTRY = 0x02;
+        const INDEX_SPECIFIED = 0x04;
+        const REOPEN = 0x10;
+    }
+}
+
+impl_serde_for_bitflags!(QueryDirectoryFlags);
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct QueryDirectoryRequest {
+    pub size: u16,
+    pub file_information_class: FileInformationClass,
+    pub flags: QueryDirectoryFlags,
+    pub file_index: u32,
+    pub file_id: FileId,
+    #[serde(rename = "search_pattern$offset")]
+    pub search_pattern_offset: u16,
+    #[serde(rename = "search_pattern$count")]
+    pub search_pattern_length: u16,
+    pub output_buffer_length: u32,
+    pub search_pattern: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct QueryDirectoryResponse {
+    pub size: u16,
+    #[serde(rename = "output_buffer$offset")]
+    pub output_buffer_offset: u16,
+    #[serde(rename = "output_buffer$count")]
+    pub output_buffer_length: u32,
+    pub output_buffer: Vec<u8>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct FileIdBothDirectoryInformation {
+    pub next_entry_offset: u32,
+    pub file_index: u32,
+    pub creation_time: Time,
+    pub last_access_time: Time,
+    pub last_write_time: Time,
+    pub change_time: Time,
+    pub end_of_file: u64,
+    pub allocation_size: u64,
+    pub file_attributes: FileAttributes,
+    #[serde(rename = "file_name$count")]
+    pub file_name_length: u32,
+    pub ea_size: u32,
+    pub reserved: u32,
+    pub file_id: u64,
+    pub file_name: String,
 }

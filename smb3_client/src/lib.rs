@@ -52,6 +52,7 @@ impl<TransportT: Transport> UnauthenticatedClient<TransportT> {
         credits_requested: Credits,
         session_id: Option<SessionId>,
         signature_func: Option<&mut dyn FnMut(&[u8]) -> Result<Signature>>,
+        tree_id: Option<TreeId>,
         request: T,
     ) -> Result<(ResponseHeader, R)> {
         let header = RequestHeader {
@@ -65,7 +66,7 @@ impl<TransportT: Transport> UnauthenticatedClient<TransportT> {
             chain_offset: 0,
             message_id: self.next_message_id.clone(),
             process_id: ProcessId(0),
-            tree_id: TreeId(0),
+            tree_id: tree_id.unwrap_or(TreeId(0)),
             session_id: session_id.unwrap_or(SessionId(0)),
             signature: Signature([0; 16]),
         };
@@ -142,20 +143,21 @@ impl<TransportT: Transport> UnauthenticatedClient<TransportT> {
             Credits(10),
             None,
             None,
+            None,
             request,
         )?;
         Ok(())
     }
 }
 
-pub struct Client<TransportT> {
+struct AuthenticatedClient<TransportT> {
     unauth_client: UnauthenticatedClient<TransportT>,
     session_id: SessionId,
     signing_key: Vec<u8>,
 }
 
-impl<TransportT: Transport> Client<TransportT> {
-    pub fn new(transport: TransportT, username: &str, password: &str) -> Result<Self> {
+impl<TransportT: Transport> AuthenticatedClient<TransportT> {
+    fn new(transport: TransportT, username: &str, password: &str) -> Result<Self> {
         let mut unauth_client = UnauthenticatedClient::new(transport);
 
         unauth_client.negotiate()?;
@@ -207,6 +209,7 @@ impl<TransportT: Transport> Client<TransportT> {
                 Credits(130),
                 None,
                 None,
+                None,
                 request.clone(),
             )?;
 
@@ -252,6 +255,7 @@ impl<TransportT: Transport> Client<TransportT> {
                 Credits(130),
                 Some(session_id),
                 None,
+                None,
                 request.clone(),
             )?;
         }
@@ -275,6 +279,7 @@ impl<TransportT: Transport> Client<TransportT> {
     fn request<T: serde::Serialize, R: serde::de::DeserializeOwned>(
         &mut self,
         command: Command,
+        tree_id: Option<TreeId>,
         request: T,
     ) -> Result<(ResponseHeader, R)> {
         let mut sig_func = |bytes: &[u8]| {
@@ -288,28 +293,25 @@ impl<TransportT: Transport> Client<TransportT> {
             Credits(64),
             Some(self.session_id),
             Some(&mut sig_func),
+            tree_id,
             request,
         )
     }
 
-    pub fn tree_connect(&mut self, path: &str) -> Result<(TreeId, TreeConnectResponse)> {
-        let path_bytes: Vec<u8> = path
-            .encode_utf16()
-            .map(|c| c.to_le_bytes().into_iter())
-            .flatten()
-            .collect();
-        let (header, response): (_, TreeConnectResponse) = self.request(
+    fn tree_connect(&mut self, path: &str) -> Result<TreeId> {
+        let (header, _): (_, TreeConnectResponse) = self.request(
             Command::TreeConnect,
+            None,
             TreeConnectRequest {
                 size: 0x9,
                 flags: TreeConnectFlags::empty(),
                 path_offset: 0x48,
-                path_length: path_bytes.len().try_into().unwrap(),
-                path: path_bytes,
+                path_length: path.len() as u16 * 2,
+                path: path.into(),
             },
         )?;
 
-        Ok((header.tree_id, response))
+        Ok(header.tree_id)
     }
 }
 
@@ -333,4 +335,77 @@ fn sp800_108_counter_kdf(key_len: usize, secret: &[u8], label: &[u8], salt: &[u8
     p.resize(key_len, 0);
 
     p
+}
+
+pub struct Client<TransportT> {
+    auth_client: AuthenticatedClient<TransportT>,
+    tree_id: TreeId,
+}
+
+impl<TransportT: Transport> Client<TransportT> {
+    pub fn new(transport: TransportT, username: &str, password: &str, path: &str) -> Result<Self> {
+        let mut auth_client = AuthenticatedClient::new(transport, username, password)?;
+        let tree_id = auth_client.tree_connect(path)?;
+        Ok(Self {
+            auth_client,
+            tree_id,
+        })
+    }
+
+    pub fn open_root(&mut self) -> Result<FileId> {
+        let (_, response): (_, CreateResponse) = self.auth_client.request(
+            Command::Create,
+            Some(self.tree_id),
+            CreateRequest {
+                size: 0x39,
+                security_flags: 0,
+                requested_oplock_level: OplockLevel::None,
+                impersonation_level: ImpersonationLevel::Impersonation,
+                create_flags: 0,
+                reserved: 0,
+                desired_access: AccessMask::FILE_READ_DATA | AccessMask::FILE_READ_EA,
+                file_attributes: FileAttributes::empty(),
+                share_access: FileShareAccess::READ
+                    | FileShareAccess::WRITE
+                    | FileShareAccess::DELETE,
+                create_disposition: FileCreateDisposition::OPEN,
+                create_options: FileCreateOptions::empty(),
+                name_offset: 0x78,
+                name_length: 0,
+                create_context_offset: 0x80,
+                create_context_length: 0,
+                name: vec![],
+                create_contexts: vec![],
+            },
+        )?;
+        Ok(response.file_id)
+    }
+
+    pub fn query_directory(&mut self, file_id: FileId) -> Result<Vec<String>> {
+        let (_, response): (_, QueryDirectoryResponse) = self.auth_client.request(
+            Command::QueryDirectory,
+            Some(self.tree_id),
+            QueryDirectoryRequest {
+                size: 0x21,
+                file_information_class: FileInformationClass::FileIdFullDirectoryInformation,
+                flags: QueryDirectoryFlags::empty(),
+                file_index: 0,
+                file_id,
+                search_pattern_offset: 0x60,
+                search_pattern_length: 2,
+                output_buffer_length: 15380,
+                search_pattern: "*".into(),
+            },
+        )?;
+        let mut output = vec![];
+        let mut reader = &response.output_buffer[..];
+        while let Ok(entry) = serde_smb::from_slice::<FileIdBothDirectoryInformation>(reader) {
+            output.push(entry.file_name);
+            if entry.next_entry_offset == 0 {
+                break;
+            }
+            reader = &reader[entry.next_entry_offset as usize..];
+        }
+        Ok(output)
+    }
 }

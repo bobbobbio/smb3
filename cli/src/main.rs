@@ -20,11 +20,11 @@ fn main() -> Result<()> {
     let opts = Options::parse();
 
     let transport = TcpStream::connect((opts.host, opts.port))?;
-    let mut client = smb3_client::Client::new(transport, &opts.username, &opts.password)?;
-
-    let (tree_id, response) = client.tree_connect(&opts.tree_path)?;
-    println!("response = {response:#?}");
-    println!("tree_id = {tree_id:?}");
+    let mut client =
+        smb3_client::Client::new(transport, &opts.username, &opts.password, &opts.tree_path)?;
+    let root = client.open_root()?;
+    let resp = client.query_directory(root)?;
+    println!("{resp:#?}");
 
     Ok(())
 }

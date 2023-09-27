@@ -212,8 +212,11 @@ impl<'a, Writer: io::Write> ser::Serializer for &'a mut Serializer<Writer> {
         unimplemented!()
     }
 
-    fn serialize_str(self, _v: &str) -> Result<()> {
-        unimplemented!()
+    fn serialize_str(self, s: &str) -> Result<()> {
+        for v in s.encode_utf16() {
+            self.writer.write_u16::<Endianness>(v)?
+        }
+        Ok(())
     }
 
     fn serialize_bytes(self, _v: &[u8]) -> Result<()> {
@@ -616,6 +619,9 @@ impl<'de, 'a, Reader: io::Read> de::Deserializer<'de> for &'a mut Deserializer<R
         if let Some(key) = self.pending_offset.take() {
             self.field_offsets.insert(key, value as usize);
         }
+        if let Some(key) = self.pending_count.take() {
+            self.counts.insert(key, value as usize);
+        }
 
         visitor.visit_u32(value)
     }
@@ -658,11 +664,24 @@ impl<'de, 'a, Reader: io::Read> de::Deserializer<'de> for &'a mut Deserializer<R
         unimplemented!()
     }
 
-    fn deserialize_string<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_string<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        unimplemented!()
+        let len = self
+            .sequence_limit
+            .take()
+            .ok_or(Error::Custom("missing string length".into()))?;
+        let mut bytes = vec![];
+        for _ in 0..(len / 2) {
+            bytes.push(self.reader.read_u16::<Endianness>()?);
+        }
+
+        let s: String = char::decode_utf16(bytes)
+            .map(|r| r.unwrap_or(char::REPLACEMENT_CHARACTER))
+            .collect();
+
+        visitor.visit_string(s)
     }
 
     fn deserialize_bytes<V>(self, _visitor: V) -> Result<V::Value>
