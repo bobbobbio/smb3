@@ -116,21 +116,15 @@ impl<TransportT: Transport> UnauthenticatedClient<TransportT> {
         let mut rng = rand::thread_rng();
         let pre_auth_salt = rng.gen::<[u8; 32]>().to_vec();
         let request = NegotiateRequest {
-            size: 0x24,
-            dialect_count: 1,
             security_mode: SecurityMode::SIGNING_ENABLED,
             reserved: 0,
             capabilities: Capabilities::empty(),
             client_guid: Uuid::new(&mut rng),
-            negotiate_context_offset: 0x68,
-            negotiate_context_count: 1,
             dialects: vec![Dialect::Smb3_1_1],
             negotiate_contexts: vec![NegotiateContext::Smb2PreauthIntegrityCapabilities(
                 Smb2PreauthIntegrityCapabilities {
                     data_length: 38,
                     reserved: 0,
-                    hash_algorithm_count: 1,
-                    salt_length: 32,
                     hash_algorithms: vec![HashAlgorithm::Sha512],
                     salt: pre_auth_salt,
                 },
@@ -191,13 +185,10 @@ impl<TransportT: Transport> AuthenticatedClient<TransportT> {
 
         let security_blob = output_buffer.pop().unwrap().buffer;
         let mut request = SessionSetupRequest {
-            size: 0x19,
             session_binding_request: false,
             security_mode: SecurityMode::SIGNING_ENABLED,
             capabilities: Capabilities::empty(),
             channel: 0,
-            blob_offset: 0x58,
-            blob_length: security_blob.len().try_into().unwrap(),
             previous_session_id: SessionId(0),
             security_blob,
         };
@@ -245,9 +236,7 @@ impl<TransportT: Transport> AuthenticatedClient<TransportT> {
                 ntlm.complete_auth_token(&mut output_buffer)?;
             }
 
-            let security_blob = output_buffer.pop().unwrap().buffer;
-            request.blob_length = security_blob.len().try_into().unwrap();
-            request.security_blob = security_blob;
+            request.security_blob = output_buffer.pop().unwrap().buffer;
 
             (resp_header, response) = unauth_client.request(
                 Command::SessionSetup,
@@ -303,10 +292,7 @@ impl<TransportT: Transport> AuthenticatedClient<TransportT> {
             Command::TreeConnect,
             None,
             TreeConnectRequest {
-                size: 0x9,
                 flags: TreeConnectFlags::empty(),
-                path_offset: 0x48,
-                path_length: path.len() as u16 * 2,
                 path: path.into(),
             },
         )?;
@@ -357,7 +343,6 @@ impl<TransportT: Transport> Client<TransportT> {
             Command::Create,
             Some(self.tree_id),
             CreateRequest {
-                size: 0x39,
                 security_flags: 0,
                 requested_oplock_level: OplockLevel::None,
                 impersonation_level: ImpersonationLevel::Impersonation,
@@ -370,11 +355,7 @@ impl<TransportT: Transport> Client<TransportT> {
                     | FileShareAccess::DELETE,
                 create_disposition: FileCreateDisposition::OPEN,
                 create_options: FileCreateOptions::empty(),
-                name_offset: 0x78,
-                name_length: 0,
-                create_context_offset: 0x80,
-                create_context_length: 0,
-                name: vec![],
+                name: "".into(),
                 create_contexts: vec![],
             },
         )?;
@@ -386,13 +367,10 @@ impl<TransportT: Transport> Client<TransportT> {
             Command::QueryDirectory,
             Some(self.tree_id),
             QueryDirectoryRequest {
-                size: 0x21,
                 file_information_class: FileInformationClass::FileIdFullDirectoryInformation,
                 flags: QueryDirectoryFlags::empty(),
                 file_index: 0,
                 file_id,
-                search_pattern_offset: 0x60,
-                search_pattern_length: 2,
                 output_buffer_length: 15380,
                 search_pattern: "*".into(),
             },

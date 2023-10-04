@@ -18,8 +18,6 @@ fn negotiate_request() {
         signature: Signature([0; 16]),
     };
     let req = NegotiateRequest {
-        size: 0x24,
-        dialect_count: 5,
         security_mode: SecurityMode::SIGNING_ENABLED,
         reserved: 0,
         capabilities: Capabilities::DFS
@@ -35,8 +33,6 @@ fn negotiate_request() {
             data3: u16::from_le_bytes([0xe6, 0x11]),
             data4: [0xa0, 0x1d, 0x00, 0x0c, 0x29, 0x61, 0xf5, 0x5f],
         },
-        negotiate_context_offset: 0x70,
-        negotiate_context_count: 2,
         dialects: vec![
             Dialect::Smb2_0_2,
             Dialect::Smb2_1,
@@ -48,8 +44,6 @@ fn negotiate_request() {
             NegotiateContext::Smb2PreauthIntegrityCapabilities(Smb2PreauthIntegrityCapabilities {
                 data_length: 38,
                 reserved: 0,
-                hash_algorithm_count: 1,
-                salt_length: 32,
                 hash_algorithms: vec![HashAlgorithm::Sha512],
                 salt: vec![
                     0xd3, 0xe0, 0xee, 0xb4, 0xd9, 0xee, 0xe0, 0x3b, 0xc8, 0x5d, 0x56, 0xc6, 0x1b,
@@ -60,7 +54,6 @@ fn negotiate_request() {
             NegotiateContext::Smb2EncryptionCapabilities(Smb2EncryptionCapabilities {
                 data_length: 6,
                 reserved: 0,
-                cipher_count: 2,
                 ciphers: vec![CipherId::Aes128Gcm, CipherId::Aes128Ccm],
             }),
         ],
@@ -110,10 +103,8 @@ fn negotiate_response() {
         signature: Signature([0; 16]),
     };
     let req = NegotiateResponse {
-        size: 0x41,
         security_mode: SecurityMode::SIGNING_ENABLED,
         dialect: Dialect::Smb3_1_1,
-        negotiate_context_count: 1,
         server_guid: Uuid {
             data1: u32::from_le_bytes([0x6e, 0x61, 0x73, 0x75]),
             data2: 0,
@@ -126,9 +117,6 @@ fn negotiate_response() {
         max_write_size: 8388608,
         current_time: Time([0xd8, 0x68, 0x92, 0x79, 0x17, 0xed, 0xd9, 0x01]),
         boot_time: Time([0; 8]),
-        blob_offset: 0x80,
-        blob_length: 74,
-        negotiate_context_offset: 0xd0,
         security_blob: vec![
             0x60, 0x48, 0x06, 0x06, 0x2b, 0x06, 0x01, 0x05, 0x05, 0x02, 0xa0, 0x3e, 0x30, 0x3c,
             0xa0, 0x0e, 0x30, 0x0c, 0x06, 0x0a, 0x2b, 0x06, 0x01, 0x04, 0x01, 0x82, 0x37, 0x02,
@@ -141,8 +129,6 @@ fn negotiate_response() {
             Smb2PreauthIntegrityCapabilities {
                 data_length: 38,
                 reserved: 0,
-                hash_algorithm_count: 1,
-                salt_length: 32,
                 hash_algorithms: vec![HashAlgorithm::Sha512],
                 salt: vec![
                     0x80, 0x13, 0x36, 0x10, 0xa3, 0xb5, 0xab, 0xb5, 0xe4, 0x02, 0xd7, 0xc8, 0x3f,
@@ -202,13 +188,10 @@ fn session_setup_request() {
         signature: Signature([0; 16]),
     };
     let req = SessionSetupRequest {
-        size: 0x19,
         session_binding_request: false,
         security_mode: SecurityMode::SIGNING_ENABLED,
         capabilities: Capabilities::DFS,
         channel: 0,
-        blob_offset: 0x58,
-        blob_length: 32,
         previous_session_id: SessionId(0),
         security_blob: vec![
             0x4e, 0x54, 0x4c, 0x4d, 0x53, 0x53, 0x50, 0x00, 0x01, 0x00, 0x00, 0x00, 0x25, 0x02,

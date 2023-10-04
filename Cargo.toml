@@ -17,6 +17,7 @@ resolver = "2"
 members = [
     "cli",
     "serde_smb",
+    "serde_smb_derive",
     "smb3",
     "smb3_client",
 ]

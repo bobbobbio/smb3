@@ -5,6 +5,8 @@ use serde::de::Visitor;
 use serde::{de, ser, Deserialize, Serialize};
 use std::{collections::BTreeMap, fmt, io};
 
+pub use serde_smb_derive::{DeserializeSmbStruct, SerializeSmbStruct};
+
 type Endianness = byteorder::LittleEndian;
 
 #[derive(Debug, From)]

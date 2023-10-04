@@ -3,6 +3,7 @@ use bitflags_serde_shim::impl_serde_for_bitflags;
 use modular_bitfield::{bitfield, specifiers::*};
 use serde::{Deserialize, Serialize};
 use serde_dis::{DeserializeWithDiscriminant, SerializeWithDiscriminant};
+use serde_smb::{DeserializeSmbStruct, SerializeSmbStruct};
 use std::fmt;
 
 #[derive(SerializeWithDiscriminant, DeserializeWithDiscriminant, Copy, Clone, Debug, PartialEq)]
@@ -61,13 +62,13 @@ pub struct Signature(pub [u8; 16]);
 #[derive(Serialize, Deserialize, Default, Copy, Clone, Debug, PartialEq)]
 pub struct Credits(pub u16);
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
 pub struct RequestHeader {
     pub protocol_id: ProtocolId,
     pub header_length: u16,
     pub credit_charge: Credits,
     pub channel_sequence: u16,
-    #[serde(rename = "command$pad4")]
+    #[smb(pad = 4)]
     pub command: Command,
     pub credits_requested: Credits,
     pub flags: HeaderFlags,
@@ -78,6 +79,8 @@ pub struct RequestHeader {
     pub session_id: SessionId,
     pub signature: Signature,
 }
+
+const HEADER_SIZE: usize = 64;
 
 #[derive(SerializeWithDiscriminant, DeserializeWithDiscriminant, Copy, Clone, Debug, PartialEq)]
 #[repr(u32)]
@@ -731,55 +734,52 @@ pub enum HashAlgorithm {
     Sha512 = 1,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
 pub struct Smb2PreauthIntegrityCapabilities {
     pub data_length: u16,
     pub reserved: u32,
-    #[serde(rename = "hash_algorithms$count")]
-    pub hash_algorithm_count: u16,
-    #[serde(rename = "salt$count")]
-    pub salt_length: u16,
+    #[smb(collection(count(int_type = "u16", after = "reserved")))]
     pub hash_algorithms: Vec<HashAlgorithm>,
+    #[smb(collection(count(int_type = "u16", after = "hash_algorithms_count")))]
     pub salt: Vec<u8>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
 pub struct Smb2EncryptionCapabilities {
     pub data_length: u16,
     pub reserved: u32,
-    #[serde(rename = "ciphers$count")]
-    pub cipher_count: u16,
+    #[smb(collection(count(int_type = "u16", after = "reserved")))]
     pub ciphers: Vec<CipherId>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
+#[smb(size = 36)]
 pub struct NegotiateRequest {
-    pub size: u16,
-    #[serde(rename = "dialects$count")]
-    pub dialect_count: u16,
     pub security_mode: SecurityMode,
     pub reserved: u16,
     pub capabilities: Capabilities,
     pub client_guid: Uuid,
-    #[serde(rename = "negotiate_contexts$offset")]
-    pub negotiate_context_offset: u32,
-    #[serde(rename = "negotiate_contexts$count")]
-    pub negotiate_context_count: u16,
-    #[serde(rename = "dialects$pad4")]
+    #[smb(pad = 4, collection(count(int_type = "u16", after = "size")))]
     pub dialects: Vec<Dialect>,
+    #[smb(collection(
+        count(int_type = "u16", after = "client_guid"),
+        offset(
+            int_type = "u32",
+            after = "client_guid",
+            value = "HEADER_SIZE + 38 + self.dialects.len() * 2"
+        )
+    ))]
     pub negotiate_contexts: Vec<NegotiateContext>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Time(pub [u8; 8]);
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
+#[smb(size = 65)]
 pub struct NegotiateResponse {
-    pub size: u16,
     pub security_mode: SecurityMode,
     pub dialect: Dialect,
-    #[serde(rename = "negotiate_contexts$count")]
-    pub negotiate_context_count: u16,
     pub server_guid: Uuid,
     pub capabilities: Capabilities,
     pub max_transaction_size: u32,
@@ -787,28 +787,34 @@ pub struct NegotiateResponse {
     pub max_write_size: u32,
     pub current_time: Time,
     pub boot_time: Time,
-    #[serde(rename = "security_blob$offset")]
-    pub blob_offset: u16,
-    #[serde(rename = "security_blob$count")]
-    pub blob_length: u16,
-    #[serde(rename = "negotiate_contexts$offset")]
-    pub negotiate_context_offset: u32,
+    #[smb(collection(
+        count(int_type = "u16", after = "boot_time"),
+        offset(int_type = "u16", after = "boot_time", value = "HEADER_SIZE + 64")
+    ))]
     pub security_blob: Vec<u8>,
+    #[smb(collection(
+        count(int_type = "u16", after = "dialect"),
+        offset(
+            int_type = "u32",
+            after = "security_blob_count",
+            value = "HEADER_SIZE + 70 + self.security_blob.len()"
+        )
+    ))]
     pub negotiate_contexts: Vec<NegotiateContext>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
+#[smb(size = 25)]
 pub struct SessionSetupRequest {
-    pub size: u16,
     pub session_binding_request: bool,
     pub security_mode: SecurityMode,
     pub capabilities: Capabilities,
     pub channel: u32,
-    #[serde(rename = "security_blob$offset")]
-    pub blob_offset: u16,
-    #[serde(rename = "security_blob$count")]
-    pub blob_length: u16,
     pub previous_session_id: SessionId,
+    #[smb(collection(
+        count(int_type = "u16", after = "channel"),
+        offset(int_type = "u16", after = "channel", value = "HEADER_SIZE + 24")
+    ))]
     pub security_blob: Vec<u8>,
 }
 
@@ -823,14 +829,14 @@ bitflags! {
 
 impl_serde_for_bitflags!(SessionFlags);
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
+#[smb(size = 9)]
 pub struct SessionSetupResponse {
-    pub size: u16,
     pub flags: SessionFlags,
-    #[serde(rename = "security_blob$offset")]
-    pub blob_offset: u16,
-    #[serde(rename = "security_blob$count")]
-    pub blob_length: u16,
+    #[smb(collection(
+        count(int_type = "u16", after = "flags"),
+        offset(int_type = "u16", after = "flags", value = "HEADER_SIZE + 8")
+    ))]
     pub security_blob: Vec<u8>,
 }
 
@@ -845,14 +851,14 @@ bitflags! {
 
 impl_serde_for_bitflags!(TreeConnectFlags);
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
+#[smb(size = 9)]
 pub struct TreeConnectRequest {
-    pub size: u16,
     pub flags: TreeConnectFlags,
-    #[serde(rename = "path$offset")]
-    pub path_offset: u16,
-    #[serde(rename = "path$count")]
-    pub path_length: u16,
+    #[smb(collection(
+        count(int_type = "u16", after = "flags", element_size = 2),
+        offset(int_type = "u16", after = "flags", value = "HEADER_SIZE + 8")
+    ))]
     pub path: String,
 }
 
@@ -938,9 +944,9 @@ bitflags! {
 
 impl_serde_for_bitflags!(AccessMask);
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
+#[smb(size = 16)]
 pub struct TreeConnectResponse {
-    pub size: u16,
     pub share_type: ShareType,
     pub share_flags: ShareFlags,
     pub share_capabilities: ShareCapabilities,
@@ -1047,9 +1053,9 @@ bitflags! {
 
 impl_serde_for_bitflags!(FileCreateOptions);
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
+#[smb(size = 57)]
 pub struct CreateRequest {
-    pub size: u16,
     pub security_flags: u8,
     pub requested_oplock_level: OplockLevel,
     pub impersonation_level: ImpersonationLevel,
@@ -1060,15 +1066,19 @@ pub struct CreateRequest {
     pub share_access: FileShareAccess,
     pub create_disposition: FileCreateDisposition,
     pub create_options: FileCreateOptions,
-    #[serde(rename = "name$offset")]
-    pub name_offset: u16,
-    #[serde(rename = "name$count")]
-    pub name_length: u16,
-    #[serde(rename = "create_contexts$offset")]
-    pub create_context_offset: u32,
-    #[serde(rename = "create_contexts$count")]
-    pub create_context_length: u32,
-    pub name: Vec<u8>,
+    #[smb(collection(
+        count(int_type = "u16", after = "create_options", element_size = 2),
+        offset(int_type = "u16", after = "create_options", value = "HEADER_SIZE + 56")
+    ))]
+    pub name: String,
+    #[smb(collection(
+        count(int_type = "u16", after = "name_count"),
+        offset(
+            int_type = "u16",
+            after = "name_count",
+            value = "HEADER_SIZE + 64 + self.name.len() * 2"
+        )
+    ))]
     pub create_contexts: Vec<u8>,
 }
 
@@ -1090,9 +1100,9 @@ bitflags! {
 
 impl_serde_for_bitflags!(FileCreateAction);
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
+#[smb(size = 89)]
 pub struct CreateResponse {
-    pub size: u16,
     pub oplock_level: OplockLevel,
     pub reparse_point: bool,
     pub create_action: FileCreateAction,
@@ -1105,10 +1115,10 @@ pub struct CreateResponse {
     pub file_attributes: FileAttributes,
     pub reserved: u32,
     pub file_id: FileId,
-    #[serde(rename = "create_contexts$offset")]
-    pub create_context_offset: u32,
-    #[serde(rename = "create_contexts$count")]
-    pub create_context_length: u32,
+    #[smb(collection(
+        count(int_type = "u32", after = "file_id"),
+        offset(int_type = "u32", after = "file_id", value = "HEADER_SIZE + 88")
+    ))]
     pub create_contexts: Vec<u8>,
 }
 
@@ -1136,32 +1146,32 @@ bitflags! {
 
 impl_serde_for_bitflags!(QueryDirectoryFlags);
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
+#[smb(size = 33)]
 pub struct QueryDirectoryRequest {
-    pub size: u16,
     pub file_information_class: FileInformationClass,
     pub flags: QueryDirectoryFlags,
     pub file_index: u32,
     pub file_id: FileId,
-    #[serde(rename = "search_pattern$offset")]
-    pub search_pattern_offset: u16,
-    #[serde(rename = "search_pattern$count")]
-    pub search_pattern_length: u16,
     pub output_buffer_length: u32,
+    #[smb(collection(
+        count(int_type = "u16", after = "file_id", element_size = 2),
+        offset(int_type = "u16", after = "file_id", value = "HEADER_SIZE + 32")
+    ))]
     pub search_pattern: String,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
+#[smb(size = 9)]
 pub struct QueryDirectoryResponse {
-    pub size: u16,
-    #[serde(rename = "output_buffer$offset")]
-    pub output_buffer_offset: u16,
-    #[serde(rename = "output_buffer$count")]
-    pub output_buffer_length: u32,
+    #[smb(collection(
+        count(int_type = "u32", after = "size"),
+        offset(int_type = "u16", after = "size", value = "HEADER_SIZE + 8")
+    ))]
     pub output_buffer: Vec<u8>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
 pub struct FileIdBothDirectoryInformation {
     pub next_entry_offset: u32,
     pub file_index: u32,
@@ -1172,10 +1182,9 @@ pub struct FileIdBothDirectoryInformation {
     pub end_of_file: u64,
     pub allocation_size: u64,
     pub file_attributes: FileAttributes,
-    #[serde(rename = "file_name$count")]
-    pub file_name_length: u32,
     pub ea_size: u32,
     pub reserved: u32,
     pub file_id: u64,
+    #[smb(collection(count(int_type = "u32", after = "file_attributes", element_size = 2)))]
     pub file_name: String,
 }

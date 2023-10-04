@@ -12,6 +12,7 @@ count-write = "^0.1"
 derive_more = "^0.99"
 serde = { version = "^1", features = ["derive"] }
 byteorder = "^1.4"
+serde_smb_derive = { version = "^0.1", path = "../serde_smb_derive" }
 
 [dev-dependencies]
 smb3 = { version = "^0.1", path = "../smb3" }
