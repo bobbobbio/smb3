@@ -2,6 +2,7 @@
 
 use smb3_client::Client;
 use smb3_client::PORT;
+use std::collections::BTreeSet;
 use std::net::TcpStream;
 
 macro_rules! test {
@@ -39,8 +40,11 @@ impl<'machine> Fixture<'machine> {
     }
 
     fn query_directory_test(&mut self) {
+        self.machine.run_command("touch /files/a /files/b /files/c");
         let root = self.client.open_root().unwrap();
-        self.client.query_directory(root).unwrap();
+        let entries_vec = self.client.query_directory(root).unwrap();
+        let entries: BTreeSet<_> = entries_vec.iter().map(|e| e.as_str()).collect();
+        assert_eq!(entries, BTreeSet::from_iter([".", "..", "a", "b", "c"]));
     }
 }
 
