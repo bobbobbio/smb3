@@ -1,3 +1,6 @@
+// for some reason the bitfield macro triggers this
+#![allow(clippy::identity_op)]
+
 use bitflags::bitflags;
 use bitflags_serde_shim::impl_serde_for_bitflags;
 use modular_bitfield::{bitfield, specifiers::*};
@@ -90,7 +93,7 @@ pub enum NtStatus {
     BadTid = 0x00050002,
     BadCommand = 0x00160002,
     BadUid = 0x005b0002,
-    UseStandard = 0x00Fb0002,
+    UseStandard = 0x00fb0002,
     BufferOverflow = 0x80000005,
     NoMoreFiles = 0x80000006,
     StoppedOnSymlink = 0x8000002d,

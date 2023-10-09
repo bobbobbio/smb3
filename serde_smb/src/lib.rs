@@ -109,14 +109,14 @@ impl<Writer: io::Write> Serializer<Writer> {
     }
 
     fn handle_offset(&mut self, name: &'static str) -> Result<()> {
-        if name.ends_with("$offset") {
-            self.pending_offset = Some(&name[..(name.len() - 7)]);
+        if let Some(stripped) = name.strip_suffix("$offset") {
+            self.pending_offset = Some(stripped);
             return Ok(());
         } else if name.ends_with("$count") {
             return Ok(());
         }
 
-        let first_name = name.split("$").next().unwrap();
+        let first_name = name.split('$').next().unwrap();
         if let Some(offset) = self.field_offsets.get(&first_name) {
             while *offset > self.writer.count() as usize {
                 self.writer.write_u8(0)?;
@@ -483,7 +483,7 @@ pub struct Deserializer<Reader> {
     pending_offset: Option<&'static str>,
 }
 
-impl<'de, 'a, Reader: io::Read> Deserializer<Reader> {
+impl<Reader: io::Read> Deserializer<Reader> {
     pub fn new(reader: Reader) -> Self {
         Self {
             reader: CountRead::new(reader),
@@ -517,13 +517,13 @@ impl<'de, 'a, Reader: io::Read> Deserializer<Reader> {
     fn handle_field(&mut self, field_name: &'static str) -> Result<String> {
         self.handle_padding(field_name)?;
 
-        let first_name = field_name.split("$").next().unwrap();
+        let first_name = field_name.split('$').next().unwrap();
 
-        if field_name.ends_with("$count") {
-            self.pending_count = Some(&field_name[..(field_name.len() - 6)]);
+        if let Some(stripped) = field_name.strip_suffix("$count") {
+            self.pending_count = Some(stripped);
             return Ok(first_name.into());
-        } else if field_name.ends_with("$offset") {
-            self.pending_offset = Some(&field_name[..(field_name.len() - 7)]);
+        } else if let Some(stripped) = field_name.strip_suffix("$offset") {
+            self.pending_offset = Some(stripped);
             return Ok(first_name.into());
         }
 
@@ -532,7 +532,7 @@ impl<'de, 'a, Reader: io::Read> Deserializer<Reader> {
         }
 
         if let Some(offset) = self.field_offsets.get(&first_name) {
-            while self.reader.num_read() < *offset as usize {
+            while self.reader.num_read() < *offset {
                 self.reader.read_u8()?;
             }
         }

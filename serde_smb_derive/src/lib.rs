@@ -237,7 +237,7 @@ fn deserialize_smb_struct_inner(input: DeriveInput) -> Result<ItemImpl> {
 
     let field_names = new_fields.iter().map(|f| &f.name);
     let field_exprs = new_fields.iter().map(|f| &f.deser_expr);
-    let field_bindings = new_fields.iter().map(|f| &f.deser_binding).flatten();
+    let field_bindings = new_fields.iter().flat_map(|f| &f.deser_binding);
     let field_patterns = new_fields.iter().map(|f| f.deser_binding_pat());
 
     Ok(parse_quote! {

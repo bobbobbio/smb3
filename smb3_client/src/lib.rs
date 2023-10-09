@@ -36,6 +36,8 @@ struct UnauthenticatedClient<TransportT> {
     pre_auth_hash: Vec<u8>,
 }
 
+type SignatureFuncRef<'a> = &'a mut dyn FnMut(&[u8]) -> Result<Signature>;
+
 impl<TransportT: Transport> UnauthenticatedClient<TransportT> {
     fn new(transport: TransportT) -> Self {
         Self {
@@ -45,13 +47,14 @@ impl<TransportT: Transport> UnauthenticatedClient<TransportT> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn request<T: serde::Serialize, R: serde::de::DeserializeOwned>(
         &mut self,
         command: Command,
         credit_charge: Credits,
         credits_requested: Credits,
         session_id: Option<SessionId>,
-        signature_func: Option<&mut dyn FnMut(&[u8]) -> Result<Signature>>,
+        signature_func: Option<SignatureFuncRef<'_>>,
         tree_id: Option<TreeId>,
         request: T,
     ) -> Result<(ResponseHeader, R)> {
@@ -64,7 +67,7 @@ impl<TransportT: Transport> UnauthenticatedClient<TransportT> {
             credits_requested,
             flags: HeaderFlags::new().with_signing(signature_func.is_some()),
             chain_offset: 0,
-            message_id: self.next_message_id.clone(),
+            message_id: self.next_message_id,
             process_id: ProcessId(0),
             tree_id: tree_id.unwrap_or(TreeId(0)),
             session_id: session_id.unwrap_or(SessionId(0)),
