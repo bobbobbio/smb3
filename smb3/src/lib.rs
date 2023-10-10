@@ -9,6 +9,21 @@ use serde_dis::{DeserializeWithDiscriminant, SerializeWithDiscriminant};
 use serde_smb::{DeserializeSmbStruct, SerializeSmbStruct};
 use std::fmt;
 
+fn smb_size(value: &impl Serialize) -> usize {
+    let mut writer = count_write::CountWrite::from(std::io::sink());
+    serde_smb::to_writer(value, &mut writer).unwrap();
+    writer.count() as usize
+}
+
+fn align_to(value: usize, align: usize) -> usize {
+    let rem = value % align;
+    if rem == 0 {
+        value
+    } else {
+        value + (align - rem)
+    }
+}
+
 #[derive(SerializeWithDiscriminant, DeserializeWithDiscriminant, Copy, Clone, Debug, PartialEq)]
 #[repr(u16)]
 pub enum Command {
@@ -1166,17 +1181,33 @@ pub struct QueryDirectoryRequest {
 
 #[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
 #[smb(size = 9)]
-pub struct QueryDirectoryResponse {
+pub struct QueryDirectoryResponse<Body> {
     #[smb(collection(
-        count(int_type = "u32", after = "size"),
+        count(
+            int_type = "u32",
+            after = "size",
+            value = "smb_size(&self.entries)",
+            as_bytes = true
+        ),
         offset(int_type = "u16", after = "size", value = "HEADER_SIZE + 8")
     ))]
-    pub output_buffer: Vec<u8>,
+    pub entries: Vec<QueryDirectoryEntry<Body>>,
+}
+
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
+#[smb(next_entry_offset = "align_to(smb_size(&self.body) + 4, 4)")]
+pub struct QueryDirectoryEntry<Body> {
+    pub body: Body,
+}
+
+impl<T> From<T> for QueryDirectoryEntry<T> {
+    fn from(body: T) -> Self {
+        QueryDirectoryEntry { body }
+    }
 }
 
 #[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
 pub struct FileIdBothDirectoryInformation {
-    pub next_entry_offset: u32,
     pub file_index: u32,
     pub creation_time: Time,
     pub last_access_time: Time,

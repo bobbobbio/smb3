@@ -15,4 +15,5 @@ byteorder = "^1.4"
 serde_smb_derive = { version = "^0.1", path = "../serde_smb_derive" }
 
 [dev-dependencies]
+pretty_assertions = "^1.4"
 smb3 = { version = "^0.1", path = "../smb3" }

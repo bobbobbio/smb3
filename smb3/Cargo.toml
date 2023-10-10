@@ -10,6 +10,7 @@ license = "MIT"
 [dependencies]
 bitflags = "^2"
 bitflags_serde_shim = "^0.2"
+count-write = "^0.1"
 rand = "^0.8"
 serde = { version = "^1", features = ["derive"] }
 modular-bitfield = "0.11.2"

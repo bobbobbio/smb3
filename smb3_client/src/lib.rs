@@ -366,26 +366,22 @@ impl<TransportT: Transport> Client<TransportT> {
     }
 
     pub fn query_directory(&mut self, file_id: FileId) -> Result<Vec<String>> {
-        let (_, response): (_, QueryDirectoryResponse) = self.auth_client.request(
-            Command::QueryDirectory,
-            Some(self.tree_id),
-            QueryDirectoryRequest {
-                file_information_class: FileInformationClass::FileIdFullDirectoryInformation,
-                flags: QueryDirectoryFlags::empty(),
-                file_index: 0,
-                file_id,
-                output_buffer_length: 15380,
-                search_pattern: "*".into(),
-            },
-        )?;
+        let (_, response): (_, QueryDirectoryResponse<FileIdBothDirectoryInformation>) =
+            self.auth_client.request(
+                Command::QueryDirectory,
+                Some(self.tree_id),
+                QueryDirectoryRequest {
+                    file_information_class: FileInformationClass::FileIdFullDirectoryInformation,
+                    flags: QueryDirectoryFlags::empty(),
+                    file_index: 0,
+                    file_id,
+                    output_buffer_length: 15380,
+                    search_pattern: "*".into(),
+                },
+            )?;
         let mut output = vec![];
-        let mut reader = &response.output_buffer[..];
-        while let Ok(entry) = serde_smb::from_slice::<FileIdBothDirectoryInformation>(reader) {
-            output.push(entry.file_name);
-            if entry.next_entry_offset == 0 {
-                break;
-            }
-            reader = &reader[entry.next_entry_offset as usize..];
+        for entry in response.entries {
+            output.push(entry.body.file_name);
         }
         Ok(output)
     }

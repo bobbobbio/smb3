@@ -89,6 +89,10 @@ pub struct Serializer<Writer> {
     writer: CountWrite<Writer>,
     field_offsets: BTreeMap<&'static str, usize>,
     pending_offset: Option<&'static str>,
+    pending_next_entry_offset: Option<&'static str>,
+    next_entry_offset: BTreeMap<&'static str, usize>,
+    struct_start_offset: usize,
+    last_seq_element: bool,
 }
 
 impl<Writer: io::Write> Serializer<Writer> {
@@ -97,6 +101,10 @@ impl<Writer: io::Write> Serializer<Writer> {
             writer: CountWrite::from(writer),
             field_offsets: BTreeMap::new(),
             pending_offset: None,
+            pending_next_entry_offset: None,
+            next_entry_offset: BTreeMap::new(),
+            struct_start_offset: 0,
+            last_seq_element: false,
         }
     }
 
@@ -108,11 +116,24 @@ impl<Writer: io::Write> Serializer<Writer> {
         Ok(())
     }
 
+    fn handle_next_entry_offset(
+        &mut self,
+        struct_name: &'static str,
+        field_name: &'static str,
+    ) -> Result<()> {
+        if field_name == "$next_entry_offset" {
+            self.pending_next_entry_offset = Some(struct_name);
+        }
+        Ok(())
+    }
+
     fn handle_offset(&mut self, name: &'static str) -> Result<()> {
         if let Some(stripped) = name.strip_suffix("$offset") {
             self.pending_offset = Some(stripped);
             return Ok(());
         } else if name.ends_with("$count") {
+            return Ok(());
+        } else if name.ends_with("$count_as_bytes") {
             return Ok(());
         }
 
@@ -142,12 +163,12 @@ impl<'a, Writer: io::Write> ser::Serializer for &'a mut Serializer<Writer> {
     type Ok = ();
     type Error = Error;
 
-    type SerializeSeq = Self;
+    type SerializeSeq = SequenceSerializer<'a, Writer>;
     type SerializeTuple = Self;
     type SerializeTupleStruct = Self;
     type SerializeTupleVariant = Self;
     type SerializeMap = Self;
-    type SerializeStruct = Self;
+    type SerializeStruct = StructSerializer<'a, Writer>;
     type SerializeStructVariant = Self;
 
     fn serialize_bool(self, v: bool) -> Result<()> {
@@ -186,9 +207,18 @@ impl<'a, Writer: io::Write> ser::Serializer for &'a mut Serializer<Writer> {
         Ok(self.writer.write_u16::<Endianness>(v)?)
     }
 
-    fn serialize_u32(self, v: u32) -> Result<()> {
+    fn serialize_u32(self, mut v: u32) -> Result<()> {
         if let Some(n) = self.pending_offset.take() {
             self.field_offsets.insert(n, v as usize);
+        }
+        if let Some(n) = self.pending_next_entry_offset {
+            if self.last_seq_element {
+                v = 0;
+            } else {
+                self.next_entry_offset
+                    .insert(n, self.struct_start_offset + v as usize);
+            }
+            self.pending_next_entry_offset = None;
         }
 
         self.pad(4)?;
@@ -273,8 +303,12 @@ impl<'a, Writer: io::Write> ser::Serializer for &'a mut Serializer<Writer> {
         unimplemented!()
     }
 
-    fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq> {
-        Ok(self)
+    fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq> {
+        Ok(SequenceSerializer {
+            serializer: self,
+            len,
+            field: 0,
+        })
     }
 
     fn serialize_tuple(self, _len: usize) -> Result<Self::SerializeTuple> {
@@ -304,8 +338,12 @@ impl<'a, Writer: io::Write> ser::Serializer for &'a mut Serializer<Writer> {
     }
 
     fn serialize_struct(self, name: &'static str, _len: usize) -> Result<Self::SerializeStruct> {
+        self.struct_start_offset = self.writer.count() as usize;
         self.handle_padding(name)?;
-        Ok(self)
+        Ok(StructSerializer {
+            serializer: self,
+            name,
+        })
     }
 
     fn serialize_struct_variant(
@@ -319,7 +357,13 @@ impl<'a, Writer: io::Write> ser::Serializer for &'a mut Serializer<Writer> {
     }
 }
 
-impl<'a, Writer: io::Write> ser::SerializeSeq for &'a mut Serializer<Writer> {
+pub struct SequenceSerializer<'a, Writer> {
+    serializer: &'a mut Serializer<Writer>,
+    len: Option<usize>,
+    field: usize,
+}
+
+impl<'a, Writer: io::Write> ser::SerializeSeq for SequenceSerializer<'a, Writer> {
     type Ok = ();
     type Error = Error;
 
@@ -327,7 +371,12 @@ impl<'a, Writer: io::Write> ser::SerializeSeq for &'a mut Serializer<Writer> {
     where
         T: ?Sized + Serialize,
     {
-        value.serialize(&mut **self)
+        if let Some(len) = &self.len {
+            self.serializer.last_seq_element = self.field >= len.saturating_sub(1);
+        }
+        value.serialize(&mut *self.serializer)?;
+        self.field += 1;
+        Ok(())
     }
 
     fn end(self) -> Result<()> {
@@ -406,7 +455,12 @@ impl<'a, Writer: io::Write> ser::SerializeMap for &'a mut Serializer<Writer> {
     }
 }
 
-impl<'a, Writer: io::Write> ser::SerializeStruct for &'a mut Serializer<Writer> {
+pub struct StructSerializer<'a, Writer> {
+    serializer: &'a mut Serializer<Writer>,
+    name: &'static str,
+}
+
+impl<'a, Writer: io::Write> ser::SerializeStruct for StructSerializer<'a, Writer> {
     type Ok = ();
     type Error = Error;
 
@@ -414,14 +468,20 @@ impl<'a, Writer: io::Write> ser::SerializeStruct for &'a mut Serializer<Writer> 
     where
         T: ?Sized + Serialize,
     {
-        self.handle_padding(key)?;
-        self.handle_offset(key)?;
-        value.serialize(&mut **self)?;
-        self.pending_offset = None;
+        self.serializer.handle_next_entry_offset(self.name, key)?;
+        self.serializer.handle_padding(key)?;
+        self.serializer.handle_offset(key)?;
+        value.serialize(&mut *self.serializer)?;
+        self.serializer.pending_offset = None;
         Ok(())
     }
 
     fn end(self) -> Result<()> {
+        if let Some(end) = self.serializer.next_entry_offset.remove(self.name) {
+            while end > self.serializer.writer.count() as usize {
+                self.serializer.writer.write_u8(0)?;
+            }
+        }
         Ok(())
     }
 }
@@ -474,13 +534,31 @@ impl<Reader: io::Read> io::Read for CountRead<Reader> {
     }
 }
 
+#[derive(Copy, Clone, PartialEq, Eq)]
+enum Count {
+    Elements(usize),
+    Bytes(usize),
+}
+
+impl Count {
+    fn to_usize(&self) -> usize {
+        match self {
+            Self::Elements(v) => *v,
+            Self::Bytes(v) => *v,
+        }
+    }
+}
+
 pub struct Deserializer<Reader> {
     reader: CountRead<Reader>,
-    sequence_limit: Option<usize>,
+    sequence_limit: Option<Count>,
     pending_count: Option<&'static str>,
-    counts: BTreeMap<&'static str, usize>,
+    pending_count_as_bytes: Option<&'static str>,
+    counts: BTreeMap<&'static str, Count>,
     field_offsets: BTreeMap<&'static str, usize>,
     pending_offset: Option<&'static str>,
+    pending_next_entry_offset: Option<&'static str>,
+    next_entry_offset: BTreeMap<&'static str, usize>,
 }
 
 impl<Reader: io::Read> Deserializer<Reader> {
@@ -489,9 +567,12 @@ impl<Reader: io::Read> Deserializer<Reader> {
             reader: CountRead::new(reader),
             sequence_limit: None,
             pending_count: None,
+            pending_count_as_bytes: None,
             counts: BTreeMap::new(),
             field_offsets: BTreeMap::new(),
             pending_offset: None,
+            pending_next_entry_offset: None,
+            next_entry_offset: BTreeMap::new(),
         }
     }
 
@@ -514,13 +595,25 @@ impl<Reader: io::Read> Deserializer<Reader> {
         Ok(())
     }
 
-    fn handle_field(&mut self, field_name: &'static str) -> Result<String> {
+    fn handle_field(
+        &mut self,
+        struct_name: &'static str,
+        field_name: &'static str,
+    ) -> Result<String> {
         self.handle_padding(field_name)?;
+
+        if field_name == "$next_entry_offset" {
+            self.pending_next_entry_offset = Some(struct_name);
+            return Ok(field_name.into());
+        }
 
         let first_name = field_name.split('$').next().unwrap();
 
         if let Some(stripped) = field_name.strip_suffix("$count") {
             self.pending_count = Some(stripped);
+            return Ok(first_name.into());
+        } else if let Some(stripped) = field_name.strip_suffix("$count_as_bytes") {
+            self.pending_count_as_bytes = Some(stripped);
             return Ok(first_name.into());
         } else if let Some(stripped) = field_name.strip_suffix("$offset") {
             self.pending_offset = Some(stripped);
@@ -606,7 +699,10 @@ impl<'de, 'a, Reader: io::Read> de::Deserializer<'de> for &'a mut Deserializer<R
             self.field_offsets.insert(key, value as usize);
         }
         if let Some(key) = self.pending_count.take() {
-            self.counts.insert(key, value as usize);
+            self.counts.insert(key, Count::Elements(value as usize));
+        }
+        if let Some(key) = self.pending_count_as_bytes.take() {
+            self.counts.insert(key, Count::Bytes(value as usize));
         }
         visitor.visit_u16(value)
     }
@@ -622,7 +718,13 @@ impl<'de, 'a, Reader: io::Read> de::Deserializer<'de> for &'a mut Deserializer<R
             self.field_offsets.insert(key, value as usize);
         }
         if let Some(key) = self.pending_count.take() {
-            self.counts.insert(key, value as usize);
+            self.counts.insert(key, Count::Elements(value as usize));
+        }
+        if let Some(key) = self.pending_count_as_bytes.take() {
+            self.counts.insert(key, Count::Bytes(value as usize));
+        }
+        if let Some(key) = self.pending_next_entry_offset.take() {
+            self.next_entry_offset.insert(key, value as usize);
         }
 
         visitor.visit_u32(value)
@@ -675,7 +777,7 @@ impl<'de, 'a, Reader: io::Read> de::Deserializer<'de> for &'a mut Deserializer<R
             .take()
             .ok_or(Error::Custom("missing string length".into()))?;
         let mut bytes = vec![];
-        for _ in 0..(len / 2) {
+        for _ in 0..(len.to_usize() / 2) {
             bytes.push(self.reader.read_u16::<Endianness>()?);
         }
 
@@ -727,10 +829,12 @@ impl<'de, 'a, Reader: io::Read> de::Deserializer<'de> for &'a mut Deserializer<R
     {
         self.handle_padding(name)?;
         visitor.visit_seq(SequenceDeserializer {
-            deserializer: self,
+            name: "",
             fields: None,
             field: 0,
             max_fields: None,
+            starting_offset: self.reader.num_read(),
+            deserializer: self,
         })
     }
 
@@ -739,10 +843,12 @@ impl<'de, 'a, Reader: io::Read> de::Deserializer<'de> for &'a mut Deserializer<R
         V: Visitor<'de>,
     {
         visitor.visit_seq(SequenceDeserializer {
+            name: "",
             max_fields: self.sequence_limit.take(),
-            deserializer: self,
             fields: None,
             field: 0,
+            starting_offset: self.reader.num_read(),
+            deserializer: self,
         })
     }
 
@@ -751,10 +857,12 @@ impl<'de, 'a, Reader: io::Read> de::Deserializer<'de> for &'a mut Deserializer<R
         V: Visitor<'de>,
     {
         visitor.visit_seq(SequenceDeserializer {
-            deserializer: self,
+            name: "",
             fields: None,
             field: 0,
             max_fields: None,
+            starting_offset: self.reader.num_read(),
+            deserializer: self,
         })
     }
 
@@ -769,10 +877,12 @@ impl<'de, 'a, Reader: io::Read> de::Deserializer<'de> for &'a mut Deserializer<R
     {
         self.handle_padding(name)?;
         visitor.visit_seq(SequenceDeserializer {
-            deserializer: self,
+            name,
             fields: None,
             field: 0,
             max_fields: None,
+            starting_offset: self.reader.num_read(),
+            deserializer: self,
         })
     }
 
@@ -794,10 +904,12 @@ impl<'de, 'a, Reader: io::Read> de::Deserializer<'de> for &'a mut Deserializer<R
     {
         self.handle_padding(name)?;
         visitor.visit_seq(SequenceDeserializer {
-            deserializer: self,
+            name,
             fields: Some(fields),
             field: 0,
             max_fields: None,
+            starting_offset: self.reader.num_read(),
+            deserializer: self,
         })
     }
 
@@ -830,9 +942,11 @@ impl<'de, 'a, Reader: io::Read> de::Deserializer<'de> for &'a mut Deserializer<R
 
 struct SequenceDeserializer<'a, Reader> {
     deserializer: &'a mut Deserializer<Reader>,
+    name: &'static str,
     fields: Option<&'static [&'static str]>,
     field: usize,
-    max_fields: Option<usize>,
+    max_fields: Option<Count>,
+    starting_offset: usize,
 }
 
 impl<'de, 'a, Reader: io::Read> de::SeqAccess<'de> for SequenceDeserializer<'a, Reader> {
@@ -843,19 +957,46 @@ impl<'de, 'a, Reader: io::Read> de::SeqAccess<'de> for SequenceDeserializer<'a, 
         T: de::DeserializeSeed<'de>,
     {
         if let Some(max_fields) = self.max_fields {
-            if self.field >= max_fields {
-                return Ok(None);
+            match max_fields {
+                Count::Elements(v) => {
+                    if self.field >= v {
+                        return Ok(None);
+                    }
+                }
+                Count::Bytes(v) => {
+                    let offset = self.deserializer.reader.num_read();
+                    let bytes = offset - self.starting_offset;
+                    if bytes >= v {
+                        return Ok(None);
+                    }
+                }
             }
         }
 
         if let Some(fields) = &self.fields {
             let f = fields[self.field];
-            self.deserializer.handle_field(f)?;
+            self.deserializer.handle_field(self.name, f)?;
         }
 
         self.field += 1;
         let value = seed.deserialize(&mut *self.deserializer)?;
         self.deserializer.pending_count = None;
+        self.deserializer.pending_next_entry_offset = None;
+
+        if let Some(fields) = &self.fields {
+            if self.field >= fields.len() {
+                if let Some(next_entry_offset) =
+                    self.deserializer.next_entry_offset.remove(self.name)
+                {
+                    while self.starting_offset + next_entry_offset
+                        > self.deserializer.reader.num_read()
+                    {
+                        self.deserializer.reader.read_u8()?;
+                    }
+                }
+            }
+        }
+
         Ok(Some(value))
     }
 }
