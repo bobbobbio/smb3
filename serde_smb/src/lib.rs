@@ -131,9 +131,7 @@ impl<Writer: io::Write> Serializer<Writer> {
         if let Some(stripped) = name.strip_suffix("$offset") {
             self.pending_offset = Some(stripped);
             return Ok(());
-        } else if name.ends_with("$count") {
-            return Ok(());
-        } else if name.ends_with("$count_as_bytes") {
+        } else if name.ends_with("$count") || name.ends_with("$count_as_bytes") {
             return Ok(());
         }
 
@@ -541,10 +539,10 @@ enum Count {
 }
 
 impl Count {
-    fn to_usize(&self) -> usize {
+    fn to_usize(self) -> usize {
         match self {
-            Self::Elements(v) => *v,
-            Self::Bytes(v) => *v,
+            Self::Elements(v) => v,
+            Self::Bytes(v) => v,
         }
     }
 }
