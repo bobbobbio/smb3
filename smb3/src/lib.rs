@@ -776,7 +776,10 @@ pub struct NegotiateRequest {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct Time(pub [u8; 8]);
+pub struct Time {
+    /// The number of 100-nanosecond intervals that have elapsed since January 1st 1601
+    pub intervals: i64,
+}
 
 #[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
 #[smb(size = 65)]

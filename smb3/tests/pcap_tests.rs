@@ -123,8 +123,10 @@ fn negotiate_response() {
         max_transaction_size: 8388608,
         max_read_size: 8388608,
         max_write_size: 8388608,
-        current_time: Time([0xd8, 0x68, 0x92, 0x79, 0x17, 0xed, 0xd9, 0x01]),
-        boot_time: Time([0; 8]),
+        current_time: Time {
+            intervals: 0x01d9ed17799268d8,
+        },
+        boot_time: Time { intervals: 0 },
         security_blob: vec![
             0x60, 0x48, 0x06, 0x06, 0x2b, 0x06, 0x01, 0x05, 0x05, 0x02, 0xa0, 0x3e, 0x30, 0x3c,
             0xa0, 0x0e, 0x30, 0x0c, 0x06, 0x0a, 0x2b, 0x06, 0x01, 0x04, 0x01, 0x82, 0x37, 0x02,
@@ -246,10 +248,18 @@ fn query_directory_response() {
         entries: vec![
             FileIdBothDirectoryInformation {
                 file_index: 0,
-                creation_time: Time([0x13, 0xc0, 0xf7, 0x0e, 0x8c, 0xfb, 0xd9, 0x01]),
-                last_access_time: Time([0x52, 0x1e, 0xbe, 0x0f, 0x8c, 0xfb, 0xd9, 0x01]),
-                last_write_time: Time([0x2f, 0x92, 0xad, 0x14, 0x8c, 0xfb, 0xd9, 0x01]),
-                change_time: Time([0x2f, 0x92, 0xad, 0x14, 0x8c, 0xfb, 0xd9, 0x01]),
+                creation_time: Time {
+                    intervals: 0x01d9fb8c0ef7c013,
+                },
+                last_access_time: Time {
+                    intervals: 0x01d9fb8c0fbe1e52,
+                },
+                last_write_time: Time {
+                    intervals: 0x01d9fb8c14ad922f,
+                },
+                change_time: Time {
+                    intervals: 0x01d9fb8c14ad922f,
+                },
                 end_of_file: 0,
                 allocation_size: 0,
                 file_attributes: FileAttributes::DIRECTORY,
@@ -261,10 +271,18 @@ fn query_directory_response() {
             .into(),
             FileIdBothDirectoryInformation {
                 file_index: 0,
-                creation_time: Time([0x3a, 0xe8, 0x74, 0xd2, 0xbb, 0x89, 0xd9, 0x01]),
-                last_access_time: Time([0xef, 0xa6, 0xa2, 0x0f, 0x8c, 0xfb, 0xd9, 0x01]),
-                last_write_time: Time([0xf9, 0x53, 0xfc, 0x0e, 0x8c, 0xfb, 0xd9, 0x01]),
-                change_time: Time([0xf9, 0x53, 0xfc, 0x0e, 0x8c, 0xfb, 0xd9, 0x01]),
+                creation_time: Time {
+                    intervals: 0x01d989bbd274e83a,
+                },
+                last_access_time: Time {
+                    intervals: 0x01d9fb8c0fa2a6ef,
+                },
+                last_write_time: Time {
+                    intervals: 0x01d9fb8c0efc53f9,
+                },
+                change_time: Time {
+                    intervals: 0x01d9fb8c0efc53f9,
+                },
                 end_of_file: 0,
                 allocation_size: 0,
                 file_attributes: FileAttributes::DIRECTORY | FileAttributes::ARCHIVE,
@@ -276,10 +294,18 @@ fn query_directory_response() {
             .into(),
             FileIdBothDirectoryInformation {
                 file_index: 0,
-                creation_time: Time([0x49, 0xfe, 0xa8, 0x14, 0x8c, 0xfb, 0xd9, 0x01]),
-                last_access_time: Time([0x4a, 0x5f, 0xa8, 0x14, 0x8c, 0xfb, 0xd9, 0x01]),
-                last_write_time: Time([0x4a, 0x5f, 0xa8, 0x14, 0x8c, 0xfb, 0xd9, 0x01]),
-                change_time: Time([0x4a, 0x5f, 0xa8, 0x14, 0x8c, 0xfb, 0xd9, 0x01]),
+                creation_time: Time {
+                    intervals: 0x01d9fb8c14a8fe49,
+                },
+                last_access_time: Time {
+                    intervals: 0x01d9fb8c14a85f4a,
+                },
+                last_write_time: Time {
+                    intervals: 0x01d9fb8c14a85f4a,
+                },
+                change_time: Time {
+                    intervals: 0x01d9fb8c14a85f4a,
+                },
                 end_of_file: 0,
                 allocation_size: 0,
                 file_attributes: FileAttributes::ARCHIVE,
@@ -291,10 +317,18 @@ fn query_directory_response() {
             .into(),
             FileIdBothDirectoryInformation {
                 file_index: 0,
-                creation_time: Time([0x2f, 0x92, 0xad, 0x14, 0x8c, 0xfb, 0xd9, 0x01]),
-                last_access_time: Time([0x0c, 0xa5, 0xac, 0x14, 0x8c, 0xfb, 0xd9, 0x01]),
-                last_write_time: Time([0x0c, 0xa5, 0xac, 0x14, 0x8c, 0xfb, 0xd9, 0x01]),
-                change_time: Time([0x0c, 0xa5, 0xac, 0x14, 0x8c, 0xfb, 0xd9, 0x01]),
+                creation_time: Time {
+                    intervals: 0x01d9fb8c14ad922f,
+                },
+                last_access_time: Time {
+                    intervals: 0x01d9fb8c14aca50c,
+                },
+                last_write_time: Time {
+                    intervals: 0x01d9fb8c14aca50c,
+                },
+                change_time: Time {
+                    intervals: 0x01d9fb8c14aca50c,
+                },
                 end_of_file: 0,
                 allocation_size: 0,
                 file_attributes: FileAttributes::ARCHIVE,
@@ -306,10 +340,18 @@ fn query_directory_response() {
             .into(),
             FileIdBothDirectoryInformation {
                 file_index: 0,
-                creation_time: Time([0x05, 0xf1, 0xa5, 0x14, 0x8c, 0xfb, 0xd9, 0x01]),
-                last_access_time: Time([0x49, 0xee, 0xa5, 0x14, 0x8c, 0xfb, 0xd9, 0x01]),
-                last_write_time: Time([0x49, 0xee, 0xa5, 0x14, 0x8c, 0xfb, 0xd9, 0x01]),
-                change_time: Time([0x49, 0xee, 0xa5, 0x14, 0x8c, 0xfb, 0xd9, 0x01]),
+                creation_time: Time {
+                    intervals: 0x01d9fb8c14a5f105,
+                },
+                last_access_time: Time {
+                    intervals: 0x01d9fb8c14a5ee49,
+                },
+                last_write_time: Time {
+                    intervals: 0x01d9fb8c14a5ee49,
+                },
+                change_time: Time {
+                    intervals: 0x01d9fb8c14a5ee49,
+                },
                 end_of_file: 0,
                 allocation_size: 0,
                 file_attributes: FileAttributes::ARCHIVE,
