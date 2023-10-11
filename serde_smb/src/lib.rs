@@ -996,3 +996,18 @@ impl<'de, 'a, Reader: io::Read> de::SeqAccess<'de> for SequenceDeserializer<'a, 
         Ok(Some(value))
     }
 }
+
+pub fn size(value: &impl Serialize) -> usize {
+    let mut writer = count_write::CountWrite::from(std::io::sink());
+    to_writer(value, &mut writer).unwrap();
+    writer.count() as usize
+}
+
+pub fn align_to(value: usize, align: usize) -> usize {
+    let rem = value % align;
+    if rem == 0 {
+        value
+    } else {
+        value + (align - rem)
+    }
+}

@@ -6,23 +6,8 @@ use bitflags_serde_shim::impl_serde_for_bitflags;
 use modular_bitfield::{bitfield, specifiers::*};
 use serde::{Deserialize, Serialize};
 use serde_dis::{DeserializeWithDiscriminant, SerializeWithDiscriminant};
-use serde_smb::{DeserializeSmbStruct, SerializeSmbStruct};
+use serde_smb::{align_to, size as smb_size, DeserializeSmbStruct, SerializeSmbStruct};
 use std::fmt;
-
-fn smb_size(value: &impl Serialize) -> usize {
-    let mut writer = count_write::CountWrite::from(std::io::sink());
-    serde_smb::to_writer(value, &mut writer).unwrap();
-    writer.count() as usize
-}
-
-fn align_to(value: usize, align: usize) -> usize {
-    let rem = value % align;
-    if rem == 0 {
-        value
-    } else {
-        value + (align - rem)
-    }
-}
 
 #[derive(SerializeWithDiscriminant, DeserializeWithDiscriminant, Copy, Clone, Debug, PartialEq)]
 #[repr(u16)]
