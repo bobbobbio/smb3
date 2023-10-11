@@ -43,7 +43,7 @@ impl<'machine> Fixture<'machine> {
         self.machine.run_command("touch /files/a /files/b /files/c");
         let root = self.client.open_root().unwrap();
         let entries_vec = self.client.query_directory(root).unwrap();
-        let entries: BTreeSet<_> = entries_vec.iter().map(|e| e.as_str()).collect();
+        let entries: BTreeSet<_> = entries_vec.iter().map(|e| e.file_name.as_str()).collect();
         assert_eq!(entries, BTreeSet::from_iter([".", "..", "a", "b", "c"]));
     }
 }

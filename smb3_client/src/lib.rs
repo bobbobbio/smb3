@@ -365,7 +365,10 @@ impl<TransportT: Transport> Client<TransportT> {
         Ok(response.file_id)
     }
 
-    pub fn query_directory(&mut self, file_id: FileId) -> Result<Vec<String>> {
+    pub fn query_directory(
+        &mut self,
+        file_id: FileId,
+    ) -> Result<Vec<FileIdBothDirectoryInformation>> {
         let (_, response): (_, QueryDirectoryResponse<FileIdBothDirectoryInformation>) =
             self.auth_client.request(
                 Command::QueryDirectory,
@@ -379,10 +382,6 @@ impl<TransportT: Transport> Client<TransportT> {
                     search_pattern: "*".into(),
                 },
             )?;
-        let mut output = vec![];
-        for entry in response.entries {
-            output.push(entry.body.file_name);
-        }
-        Ok(output)
+        Ok(response.entries.into_iter().map(|e| e.body).collect())
     }
 }
