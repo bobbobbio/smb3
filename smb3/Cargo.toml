@@ -16,3 +16,6 @@ serde = { version = "^1", features = ["derive"] }
 modular-bitfield = "0.11.2"
 serde_dis = "^0.1.3"
 serde_smb = { version = "^0.1", path = "../serde_smb" }
+
+[dev-dependencies]
+pretty_assertions = "^1.4"

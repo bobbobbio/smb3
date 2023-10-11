@@ -13,7 +13,3 @@ darling = "^0.20"
 proc-macro2 = "^1"
 syn = { version = "^2", features = ["full"] }
 quote = "^1"
-
-[dev-dependencies]
-serde = { version = "^1", features = ["derive"] }
-serde_smb = { version = "^0.1", path = "../serde_smb" }
