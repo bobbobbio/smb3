@@ -158,3 +158,49 @@ fn extreme_offset() {
     let deserialized: ExtremeOffset = serde_smb::from_slice(&expected[..]).unwrap();
     assert_eq!(deserialized, f);
 }
+
+#[derive(Debug, PartialEq, SerializeSmbStruct, DeserializeSmbStruct)]
+#[smb(pad = 4)]
+struct PaddedElement {
+    a: u16,
+}
+
+#[derive(Debug, PartialEq, SerializeSmbStruct, DeserializeSmbStruct)]
+struct InterestingPadding {
+    a: u16,
+    // e_count: u32
+    b: u16,
+    #[smb(pad = 4)]
+    c: u16,
+    #[smb(collection(count(int_type = "u32", after = "a")))]
+    e: Vec<PaddedElement>,
+}
+
+#[test]
+fn interesting_padding() {
+    let f = InterestingPadding {
+        a: 0x1122,
+        b: 0x3344,
+        c: 0x5566,
+        e: vec![PaddedElement { a: 0x7788 }, PaddedElement { a: 0x99aa }],
+    };
+
+    let actual = serde_smb::to_vec(&f).unwrap();
+
+    let expected = [
+        0x22, 0x11, // a
+        0x0, 0x0, // padding
+        0x2, 0x0, 0x0, 0x0, // e_count
+        0x44, 0x33, // b
+        0x0, 0x0, // padding
+        0x66, 0x55, // c
+        0x0, 0x0, // padding
+        0x88, 0x77, // e[0]
+        0x0, 0x0, // padding
+        0xaa, 0x99, // e[1]
+    ];
+    assert_bytes_equal(&expected, &actual);
+
+    let deserialized: InterestingPadding = serde_smb::from_slice(&expected[..]).unwrap();
+    assert_eq!(deserialized, f);
+}

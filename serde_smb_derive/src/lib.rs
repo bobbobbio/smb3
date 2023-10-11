@@ -124,9 +124,11 @@ impl StructField {
 #[darling(supports(struct_named))]
 #[darling(attributes(smb))]
 struct SerInput {
+    ident: Ident,
     data: darling::ast::Data<(), StructField>,
     size: Option<Expr>,
     next_entry_offset: Option<Expr>,
+    pad: Option<usize>,
 }
 
 fn evaluate_size(size: Option<Expr>, new_fields: &mut Vec<NewField>) -> Result<()> {
@@ -199,7 +201,7 @@ impl NewField {
     }
 }
 
-fn handle_input(input: DeriveInput) -> Result<Vec<NewField>> {
+fn handle_input(input: DeriveInput) -> Result<(String, Vec<NewField>)> {
     let input = SerInput::from_derive_input(&input)?;
 
     let fields = input.data.take_struct().unwrap();
@@ -220,7 +222,12 @@ fn handle_input(input: DeriveInput) -> Result<Vec<NewField>> {
         info.evaluate(&collection, &mut new_fields)?;
     }
 
-    Ok(new_fields)
+    let mut self_name = input.ident.to_string();
+    if let Some(p) = input.pad {
+        self_name += &format!("$Pad{p}");
+    }
+
+    Ok((self_name, new_fields))
 }
 
 fn type_with_generics(ident: &Ident, generics: &Generics) -> Type {
@@ -265,9 +272,7 @@ fn serialize_smb_struct_inner(input: DeriveInput) -> Result<ItemImpl> {
     let impl_where_clause =
         generate_where_clause(&input.generics, parse_quote!(::serde::Serialize));
 
-    let self_name = input.ident.to_string();
-
-    let new_fields = handle_input(input)?;
+    let (self_name, new_fields) = handle_input(input)?;
 
     let num_fields = new_fields.len();
     let field_names = new_fields.iter().map(|f| &f.name);
@@ -308,9 +313,8 @@ fn deserialize_smb_struct_inner(input: DeriveInput) -> Result<ItemImpl> {
 
     let impl_where_clause =
         generate_where_clause(&input.generics, parse_quote!(::serde::Deserialize<'de>));
-    let self_name = input.ident.to_string();
 
-    let new_fields = handle_input(input)?;
+    let (self_name, new_fields) = handle_input(input)?;
 
     let field_names = new_fields.iter().map(|f| &f.name);
     let field_exprs = new_fields.iter().map(|f| &f.deser_expr);
