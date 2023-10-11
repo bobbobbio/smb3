@@ -91,7 +91,6 @@ pub struct Serializer<Writer> {
     pending_offset: Option<&'static str>,
     pending_next_entry_offset: Option<&'static str>,
     next_entry_offset: BTreeMap<&'static str, usize>,
-    struct_start_offset: usize,
     last_seq_element: bool,
 }
 
@@ -103,7 +102,6 @@ impl<Writer: io::Write> Serializer<Writer> {
             pending_offset: None,
             pending_next_entry_offset: None,
             next_entry_offset: BTreeMap::new(),
-            struct_start_offset: 0,
             last_seq_element: false,
         }
     }
@@ -213,8 +211,7 @@ impl<'a, Writer: io::Write> ser::Serializer for &'a mut Serializer<Writer> {
             if self.last_seq_element {
                 v = 0;
             } else {
-                self.next_entry_offset
-                    .insert(n, self.struct_start_offset + v as usize);
+                self.next_entry_offset.insert(n, v as usize);
             }
             self.pending_next_entry_offset = None;
         }
@@ -336,9 +333,9 @@ impl<'a, Writer: io::Write> ser::Serializer for &'a mut Serializer<Writer> {
     }
 
     fn serialize_struct(self, name: &'static str, _len: usize) -> Result<Self::SerializeStruct> {
-        self.struct_start_offset = self.writer.count() as usize;
         self.handle_padding(name)?;
         Ok(StructSerializer {
+            struct_start_offset: self.writer.count() as usize,
             serializer: self,
             name,
         })
@@ -455,6 +452,7 @@ impl<'a, Writer: io::Write> ser::SerializeMap for &'a mut Serializer<Writer> {
 
 pub struct StructSerializer<'a, Writer> {
     serializer: &'a mut Serializer<Writer>,
+    struct_start_offset: usize,
     name: &'static str,
 }
 
@@ -476,7 +474,7 @@ impl<'a, Writer: io::Write> ser::SerializeStruct for StructSerializer<'a, Writer
 
     fn end(self) -> Result<()> {
         if let Some(end) = self.serializer.next_entry_offset.remove(self.name) {
-            while end > self.serializer.writer.count() as usize {
+            while self.struct_start_offset + end > self.serializer.writer.count() as usize {
                 self.serializer.writer.write_u8(0)?;
             }
         }
