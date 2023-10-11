@@ -781,6 +781,59 @@ pub struct Time {
     pub intervals: i64,
 }
 
+#[cfg(feature = "chrono")]
+impl Time {
+    pub fn to_date_time(&self) -> chrono::NaiveDateTime {
+        use chrono::{
+            naive::{NaiveDate, NaiveDateTime, NaiveTime},
+            Duration,
+        };
+        let mut ts = NaiveDateTime::new(
+            NaiveDate::from_ymd_opt(1601, 1, 1).unwrap(),
+            NaiveTime::from_hms_milli_opt(0, 0, 0, 0).unwrap(),
+        );
+        ts += Duration::microseconds(self.intervals / 10);
+
+        let nanos = Duration::nanoseconds(self.intervals % 10 * 100);
+        if self.intervals < 0 {
+            ts -= nanos;
+        } else {
+            ts += nanos;
+        }
+        ts
+    }
+}
+
+#[cfg(feature = "chrono")]
+#[test]
+fn time_to_date_time_positive() {
+    use chrono::naive::{NaiveDate, NaiveDateTime, NaiveTime};
+    let t = Time {
+        intervals: 0x01d9fb8c14a5ee49,
+    };
+    // 2023-10-10 08:11:44.455226500 -0700
+    let expected = NaiveDateTime::new(
+        NaiveDate::from_ymd_opt(2023, 10, 10).unwrap(),
+        NaiveTime::from_hms_nano_opt(8 + 7, 11, 44, 455226500).unwrap(),
+    );
+    assert_eq!(t.to_date_time(), expected);
+}
+
+#[cfg(feature = "chrono")]
+#[test]
+fn time_to_date_time_negative() {
+    use chrono::naive::{NaiveDate, NaiveDateTime, NaiveTime};
+    let t = Time {
+        intervals: -0x40b122aff958,
+    };
+    // 1600-10-10 07:18:46.465297200 -0752
+    let expected = NaiveDateTime::new(
+        NaiveDate::from_ymd_opt(1600, 10, 10).unwrap(),
+        NaiveTime::from_hms_nano_opt(8 + 7 + 1, 10, 46, 465297200).unwrap(),
+    );
+    assert_eq!(t.to_date_time(), expected);
+}
+
 #[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
 #[smb(size = 65)]
 pub struct NegotiateResponse {
