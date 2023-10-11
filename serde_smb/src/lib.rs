@@ -1,5 +1,5 @@
 use byteorder::{ReadBytesExt as _, WriteBytesExt as _};
-use count_write::CountWrite;
+use countio::Counter;
 use derive_more::From;
 use serde::de::Visitor;
 use serde::{de, ser, Deserialize, Serialize};
@@ -86,7 +86,7 @@ where
 pub type Result<T> = std::result::Result<T, Error>;
 
 pub struct Serializer<Writer> {
-    writer: CountWrite<Writer>,
+    writer: Counter<Writer>,
     field_offsets: BTreeMap<&'static str, usize>,
     pending_offset: Option<&'static str>,
     pending_next_entry_offset: Option<&'static str>,
@@ -97,7 +97,7 @@ pub struct Serializer<Writer> {
 impl<Writer: io::Write> Serializer<Writer> {
     fn new(writer: Writer) -> Self {
         Self {
-            writer: CountWrite::from(writer),
+            writer: Counter::new(writer),
             field_offsets: BTreeMap::new(),
             pending_offset: None,
             pending_next_entry_offset: None,
@@ -107,7 +107,7 @@ impl<Writer: io::Write> Serializer<Writer> {
     }
 
     fn pad(&mut self, align: usize) -> Result<()> {
-        let padding = (self.writer.count() as usize) % align;
+        let padding = self.writer.writer_bytes() % align;
         for _ in 0..padding {
             self.writer.write_u8(0)?;
         }
@@ -135,7 +135,7 @@ impl<Writer: io::Write> Serializer<Writer> {
 
         let first_name = name.split('$').next().unwrap();
         if let Some(offset) = self.field_offsets.get(&first_name) {
-            while *offset > self.writer.count() as usize {
+            while *offset > self.writer.writer_bytes() {
                 self.writer.write_u8(0)?;
             }
         }
@@ -335,7 +335,7 @@ impl<'a, Writer: io::Write> ser::Serializer for &'a mut Serializer<Writer> {
     fn serialize_struct(self, name: &'static str, _len: usize) -> Result<Self::SerializeStruct> {
         self.handle_padding(name)?;
         Ok(StructSerializer {
-            struct_start_offset: self.writer.count() as usize,
+            struct_start_offset: self.writer.writer_bytes(),
             serializer: self,
             name,
         })
@@ -474,7 +474,7 @@ impl<'a, Writer: io::Write> ser::SerializeStruct for StructSerializer<'a, Writer
 
     fn end(self) -> Result<()> {
         if let Some(end) = self.serializer.next_entry_offset.remove(self.name) {
-            while self.struct_start_offset + end > self.serializer.writer.count() as usize {
+            while self.struct_start_offset + end > self.serializer.writer.writer_bytes() {
                 self.serializer.writer.write_u8(0)?;
             }
         }
@@ -498,38 +498,6 @@ impl<'a, Writer: io::Write> ser::SerializeStructVariant for &'a mut Serializer<W
     }
 }
 
-struct CountRead<Reader> {
-    reader: Reader,
-    num_read: usize,
-}
-
-impl<Reader> CountRead<Reader> {
-    fn new(reader: Reader) -> Self {
-        Self {
-            reader,
-            num_read: 0,
-        }
-    }
-
-    fn num_read(&self) -> usize {
-        self.num_read
-    }
-}
-
-impl<Reader: io::Read> io::Read for CountRead<Reader> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let num = self.reader.read(buf)?;
-        self.num_read += num;
-        Ok(num)
-    }
-
-    fn read_vectored(&mut self, bufs: &mut [io::IoSliceMut<'_>]) -> io::Result<usize> {
-        let num = self.reader.read_vectored(bufs)?;
-        self.num_read += num;
-        Ok(num)
-    }
-}
-
 #[derive(Copy, Clone, PartialEq, Eq)]
 enum Count {
     Elements(usize),
@@ -546,7 +514,7 @@ impl Count {
 }
 
 pub struct Deserializer<Reader> {
-    reader: CountRead<Reader>,
+    reader: Counter<Reader>,
     sequence_limit: Option<Count>,
     pending_count: Option<&'static str>,
     pending_count_as_bytes: Option<&'static str>,
@@ -560,7 +528,7 @@ pub struct Deserializer<Reader> {
 impl<Reader: io::Read> Deserializer<Reader> {
     pub fn new(reader: Reader) -> Self {
         Self {
-            reader: CountRead::new(reader),
+            reader: Counter::new(reader),
             sequence_limit: None,
             pending_count: None,
             pending_count_as_bytes: None,
@@ -573,7 +541,7 @@ impl<Reader: io::Read> Deserializer<Reader> {
     }
 
     fn consume_pad(&mut self, pad: usize) -> Result<()> {
-        while self.reader.num_read() % pad > 0 {
+        while self.reader.reader_bytes() % pad > 0 {
             self.reader.read_u8()?;
         }
         Ok(())
@@ -621,7 +589,7 @@ impl<Reader: io::Read> Deserializer<Reader> {
         }
 
         if let Some(offset) = self.field_offsets.get(&first_name) {
-            while self.reader.num_read() < *offset {
+            while self.reader.reader_bytes() < *offset {
                 self.reader.read_u8()?;
             }
         }
@@ -829,7 +797,7 @@ impl<'de, 'a, Reader: io::Read> de::Deserializer<'de> for &'a mut Deserializer<R
             fields: None,
             field: 0,
             max_fields: None,
-            starting_offset: self.reader.num_read(),
+            starting_offset: self.reader.reader_bytes(),
             deserializer: self,
         })
     }
@@ -843,7 +811,7 @@ impl<'de, 'a, Reader: io::Read> de::Deserializer<'de> for &'a mut Deserializer<R
             max_fields: self.sequence_limit.take(),
             fields: None,
             field: 0,
-            starting_offset: self.reader.num_read(),
+            starting_offset: self.reader.reader_bytes(),
             deserializer: self,
         })
     }
@@ -857,7 +825,7 @@ impl<'de, 'a, Reader: io::Read> de::Deserializer<'de> for &'a mut Deserializer<R
             fields: None,
             field: 0,
             max_fields: None,
-            starting_offset: self.reader.num_read(),
+            starting_offset: self.reader.reader_bytes(),
             deserializer: self,
         })
     }
@@ -877,7 +845,7 @@ impl<'de, 'a, Reader: io::Read> de::Deserializer<'de> for &'a mut Deserializer<R
             fields: None,
             field: 0,
             max_fields: None,
-            starting_offset: self.reader.num_read(),
+            starting_offset: self.reader.reader_bytes(),
             deserializer: self,
         })
     }
@@ -904,7 +872,7 @@ impl<'de, 'a, Reader: io::Read> de::Deserializer<'de> for &'a mut Deserializer<R
             fields: Some(fields),
             field: 0,
             max_fields: None,
-            starting_offset: self.reader.num_read(),
+            starting_offset: self.reader.reader_bytes(),
             deserializer: self,
         })
     }
@@ -960,7 +928,7 @@ impl<'de, 'a, Reader: io::Read> de::SeqAccess<'de> for SequenceDeserializer<'a, 
                     }
                 }
                 Count::Bytes(v) => {
-                    let offset = self.deserializer.reader.num_read();
+                    let offset = self.deserializer.reader.reader_bytes();
                     let bytes = offset - self.starting_offset;
                     if bytes >= v {
                         return Ok(None);
@@ -985,7 +953,7 @@ impl<'de, 'a, Reader: io::Read> de::SeqAccess<'de> for SequenceDeserializer<'a, 
                     self.deserializer.next_entry_offset.remove(self.name)
                 {
                     while self.starting_offset + next_entry_offset
-                        > self.deserializer.reader.num_read()
+                        > self.deserializer.reader.reader_bytes()
                     {
                         self.deserializer.reader.read_u8()?;
                     }
@@ -998,9 +966,9 @@ impl<'de, 'a, Reader: io::Read> de::SeqAccess<'de> for SequenceDeserializer<'a, 
 }
 
 pub fn size(value: &impl Serialize) -> usize {
-    let mut writer = count_write::CountWrite::from(std::io::sink());
+    let mut writer = Counter::new(std::io::sink());
     to_writer(value, &mut writer).unwrap();
-    writer.count() as usize
+    writer.writer_bytes()
 }
 
 pub fn align_to(value: usize, align: usize) -> usize {
