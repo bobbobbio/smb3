@@ -120,14 +120,12 @@ impl<TransportT: Transport> UnauthenticatedClient<TransportT> {
         let pre_auth_salt = rng.gen::<[u8; 32]>().to_vec();
         let request = NegotiateRequest {
             security_mode: SecurityMode::SIGNING_ENABLED,
-            reserved: 0,
             capabilities: Capabilities::empty(),
             client_guid: Uuid::new(&mut rng),
             dialects: vec![Dialect::Smb3_1_1],
             negotiate_contexts: vec![NegotiateContext::Smb2PreauthIntegrityCapabilities(
                 Smb2PreauthIntegrityCapabilities {
                     data_length: 38,
-                    reserved: 0,
                     hash_algorithms: vec![HashAlgorithm::Sha512],
                     salt: pre_auth_salt,
                 },
@@ -346,11 +344,8 @@ impl<TransportT: Transport> Client<TransportT> {
             Command::Create,
             Some(self.tree_id),
             CreateRequest {
-                security_flags: 0,
                 requested_oplock_level: OplockLevel::None,
                 impersonation_level: ImpersonationLevel::Impersonation,
-                create_flags: 0,
-                reserved: 0,
                 desired_access: AccessMask::FILE_READ_DATA | AccessMask::FILE_READ_EA,
                 file_attributes: FileAttributes::empty(),
                 share_access: FileShareAccess::READ

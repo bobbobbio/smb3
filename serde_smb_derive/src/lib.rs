@@ -102,12 +102,53 @@ impl Collection {
     }
 }
 
+#[derive(Clone, Debug, FromMeta)]
+struct Reserved {
+    name: String,
+    int_type: Type,
+}
+
+impl Reserved {
+    fn insert_before(
+        &self,
+        new_fields: &mut Vec<NewField>,
+        new_field: NewField,
+        before: &Ident,
+    ) -> Result<()> {
+        let index = new_fields
+            .iter()
+            .position(|f| &f.ident == before)
+            .ok_or(Error::new(
+                before.span(),
+                format!("couldn't find field {before}"),
+            ))?;
+        new_fields.insert(index, new_field);
+        Ok(())
+    }
+
+    fn evaluate(&self, before: &Ident, new_fields: &mut Vec<NewField>) -> Result<()> {
+        let int_type = &self.int_type;
+        let new_field = NewField {
+            ident: Ident::new(&self.name, Span::call_site()),
+            name: self.name.clone(),
+            ser_expr: parse_quote!(&<#int_type as ::std::default::Default>::default()),
+            deser_expr: parse_quote!(
+                seq.next_element::<#int_type>()
+            ),
+            deser_binding: None,
+        };
+        self.insert_before(new_fields, new_field, before)?;
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, FromField)]
 #[darling(attributes(smb))]
 struct StructField {
     ident: Option<Ident>,
     pad: Option<usize>,
     collection: Option<Collection>,
+    insert_reserved: Option<Reserved>,
 }
 
 impl StructField {
@@ -206,10 +247,15 @@ fn handle_input(input: DeriveInput) -> Result<(String, Vec<NewField>)> {
 
     let fields = input.data.take_struct().unwrap();
 
+    let mut reserved = vec![];
     let mut collections = vec![];
+
     for f in fields.iter() {
         if let Some(c) = &f.collection {
             collections.push((f.ident.clone().unwrap(), c.clone()));
+        }
+        if let Some(r) = &f.insert_reserved {
+            reserved.push((f.ident.clone().unwrap(), r.clone()));
         }
     }
 
@@ -217,6 +263,10 @@ fn handle_input(input: DeriveInput) -> Result<(String, Vec<NewField>)> {
 
     evaluate_next_entry_offset(input.next_entry_offset, &mut new_fields)?;
     evaluate_size(input.size, &mut new_fields)?;
+
+    for (before, reserved) in reserved {
+        reserved.evaluate(&before, &mut new_fields)?;
+    }
 
     for (collection, info) in collections {
         info.evaluate(&collection, &mut new_fields)?;

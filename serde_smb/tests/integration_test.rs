@@ -204,3 +204,36 @@ fn interesting_padding() {
     let deserialized: InterestingPadding = serde_smb::from_slice(&expected[..]).unwrap();
     assert_eq!(deserialized, f);
 }
+
+#[derive(Debug, PartialEq, SerializeSmbStruct, DeserializeSmbStruct)]
+struct InsertReserved {
+    a: u16,
+    #[smb(insert_reserved(name = "foo", int_type = "u32"))]
+    b: u16,
+    #[smb(insert_reserved(name = "bar", int_type = "u16"))]
+    c: u16,
+}
+
+#[test]
+fn insert_reserved() {
+    let f = InsertReserved {
+        a: 0x1122,
+        b: 0x3344,
+        c: 0x5566,
+    };
+
+    let actual = serde_smb::to_vec(&f).unwrap();
+
+    let expected = [
+        0x22, 0x11, // a
+        0x0, 0x0, // padding
+        0x0, 0x0, 0x0, 0x0, // foo
+        0x44, 0x33, // b
+        0x0, 0x0, // bar
+        0x66, 0x55, // c
+    ];
+    assert_bytes_equal(&expected, &actual);
+
+    let deserialized: InsertReserved = serde_smb::from_slice(&expected[..]).unwrap();
+    assert_eq!(deserialized, f);
+}

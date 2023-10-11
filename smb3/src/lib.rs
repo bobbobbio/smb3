@@ -740,8 +740,10 @@ pub enum HashAlgorithm {
 #[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
 pub struct Smb2PreauthIntegrityCapabilities {
     pub data_length: u16,
-    pub reserved: u32,
-    #[smb(collection(count(int_type = "u16", after = "reserved")))]
+    #[smb(
+        insert_reserved(name = "reserved", int_type = "u32"),
+        collection(count(int_type = "u16", after = "reserved"))
+    )]
     pub hash_algorithms: Vec<HashAlgorithm>,
     #[smb(collection(count(int_type = "u16", after = "hash_algorithms_count")))]
     pub salt: Vec<u8>,
@@ -750,8 +752,10 @@ pub struct Smb2PreauthIntegrityCapabilities {
 #[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
 pub struct Smb2EncryptionCapabilities {
     pub data_length: u16,
-    pub reserved: u32,
-    #[smb(collection(count(int_type = "u16", after = "reserved")))]
+    #[smb(
+        insert_reserved(name = "reserved", int_type = "u32"),
+        collection(count(int_type = "u16", after = "reserved"))
+    )]
     pub ciphers: Vec<CipherId>,
 }
 
@@ -759,7 +763,7 @@ pub struct Smb2EncryptionCapabilities {
 #[smb(size = 36)]
 pub struct NegotiateRequest {
     pub security_mode: SecurityMode,
-    pub reserved: u16,
+    #[smb(insert_reserved(name = "reserved", int_type = "u16"))]
     pub capabilities: Capabilities,
     pub client_guid: Uuid,
     #[smb(pad = 4, collection(count(int_type = "u16", after = "size")))]
@@ -1115,11 +1119,10 @@ impl_serde_for_bitflags!(FileCreateOptions);
 #[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
 #[smb(size = 57)]
 pub struct CreateRequest {
-    pub security_flags: u8,
+    #[smb(insert_reserved(name = "security_flags", int_type = "u8"))]
     pub requested_oplock_level: OplockLevel,
     pub impersonation_level: ImpersonationLevel,
-    pub create_flags: u64,
-    pub reserved: u64,
+    #[smb(insert_reserved(name = "create_flags_and_reserved", int_type = "(u64, u64)"))]
     pub desired_access: AccessMask,
     pub file_attributes: FileAttributes,
     pub share_access: FileShareAccess,
@@ -1172,7 +1175,7 @@ pub struct CreateResponse {
     pub allocation_size: u64,
     pub end_of_file: u64,
     pub file_attributes: FileAttributes,
-    pub reserved: u32,
+    #[smb(insert_reserved(name = "reserved", int_type = "u32"))]
     pub file_id: FileId,
     #[smb(collection(
         count(int_type = "u32", after = "file_id"),
@@ -1258,7 +1261,7 @@ pub struct FileIdBothDirectoryInformation {
     pub allocation_size: u64,
     pub file_attributes: FileAttributes,
     pub ea_size: u32,
-    pub reserved: u32,
+    #[smb(insert_reserved(name = "reserved", int_type = "u32"))]
     pub file_id: u64,
     #[smb(collection(count(int_type = "u32", after = "file_attributes", element_size = 2)))]
     pub file_name: String,

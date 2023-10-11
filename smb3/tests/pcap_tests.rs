@@ -30,7 +30,6 @@ fn negotiate_request() {
     };
     let req = NegotiateRequest {
         security_mode: SecurityMode::SIGNING_ENABLED,
-        reserved: 0,
         capabilities: Capabilities::DFS
             | Capabilities::LEASING
             | Capabilities::LARGE_MTU
@@ -54,7 +53,6 @@ fn negotiate_request() {
         negotiate_contexts: vec![
             NegotiateContext::Smb2PreauthIntegrityCapabilities(Smb2PreauthIntegrityCapabilities {
                 data_length: 38,
-                reserved: 0,
                 hash_algorithms: vec![HashAlgorithm::Sha512],
                 salt: vec![
                     0xd3, 0xe0, 0xee, 0xb4, 0xd9, 0xee, 0xe0, 0x3b, 0xc8, 0x5d, 0x56, 0xc6, 0x1b,
@@ -64,7 +62,6 @@ fn negotiate_request() {
             }),
             NegotiateContext::Smb2EncryptionCapabilities(Smb2EncryptionCapabilities {
                 data_length: 6,
-                reserved: 0,
                 ciphers: vec![CipherId::Aes128Gcm, CipherId::Aes128Ccm],
             }),
         ],
@@ -138,7 +135,6 @@ fn negotiate_response() {
         negotiate_contexts: vec![NegotiateContext::Smb2PreauthIntegrityCapabilities(
             Smb2PreauthIntegrityCapabilities {
                 data_length: 38,
-                reserved: 0,
                 hash_algorithms: vec![HashAlgorithm::Sha512],
                 salt: vec![
                     0x80, 0x13, 0x36, 0x10, 0xa3, 0xb5, 0xab, 0xb5, 0xe4, 0x02, 0xd7, 0xc8, 0x3f,
@@ -264,7 +260,6 @@ fn query_directory_response() {
                 allocation_size: 0,
                 file_attributes: FileAttributes::DIRECTORY,
                 ea_size: 0,
-                reserved: 0,
                 file_id: 0xf5084f8,
                 file_name: ".".into(),
             }
@@ -287,7 +282,6 @@ fn query_directory_response() {
                 allocation_size: 0,
                 file_attributes: FileAttributes::DIRECTORY | FileAttributes::ARCHIVE,
                 ea_size: 0,
-                reserved: 0,
                 file_id: 0xeee0001,
                 file_name: "..".into(),
             }
@@ -310,7 +304,6 @@ fn query_directory_response() {
                 allocation_size: 0,
                 file_attributes: FileAttributes::ARCHIVE,
                 ea_size: 0,
-                reserved: 0,
                 file_id: 0xf5084fa,
                 file_name: "b".into(),
             }
@@ -333,7 +326,6 @@ fn query_directory_response() {
                 allocation_size: 0,
                 file_attributes: FileAttributes::ARCHIVE,
                 ea_size: 0,
-                reserved: 0,
                 file_id: 0xf5084fb,
                 file_name: "c".into(),
             }
@@ -356,7 +348,6 @@ fn query_directory_response() {
                 allocation_size: 0,
                 file_attributes: FileAttributes::ARCHIVE,
                 ea_size: 0,
-                reserved: 0,
                 file_id: 0xf5084f9,
                 file_name: "a".into(),
             }
