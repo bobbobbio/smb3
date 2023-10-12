@@ -12,6 +12,7 @@ use sspi::{
     AuthIdentity, ClientRequestFlags, CredentialUse, DataRepresentation, Ntlm, SecurityBuffer,
     SecurityBufferType, SecurityStatus, Sspi, SspiImpl,
 };
+use std::path::{Component, Path};
 use std::{io, mem};
 
 pub const PORT: u16 = 445;
@@ -324,6 +325,19 @@ fn sp800_108_counter_kdf(key_len: usize, secret: &[u8], label: &[u8], salt: &[u8
     p
 }
 
+fn path_str(path: impl AsRef<Path>) -> String {
+    let path_compontents: Vec<_> = path
+        .as_ref()
+        .components()
+        .filter_map(|c| match c {
+            Component::Normal(s) => Some(String::from(s.to_str().unwrap())),
+            Component::ParentDir => Some(String::from("..")),
+            _ => None,
+        })
+        .collect();
+    path_compontents.join("\\")
+}
+
 pub struct Client<TransportT> {
     auth_client: AuthenticatedClient<TransportT>,
     tree_id: TreeId,
@@ -339,7 +353,7 @@ impl<TransportT: Transport> Client<TransportT> {
         })
     }
 
-    pub fn open_root(&mut self) -> Result<FileId> {
+    pub fn look_up(&mut self, path: impl AsRef<Path>) -> Result<FileId> {
         let (_, response): (_, CreateResponse) = self.auth_client.request(
             Command::Create,
             Some(self.tree_id),
@@ -353,7 +367,28 @@ impl<TransportT: Transport> Client<TransportT> {
                     | FileShareAccess::DELETE,
                 create_disposition: FileCreateDisposition::OPEN,
                 create_options: FileCreateOptions::empty(),
-                name: "".into(),
+                name: path_str(path),
+                create_contexts: vec![],
+            },
+        )?;
+        Ok(response.file_id)
+    }
+
+    pub fn create_file(&mut self, path: impl AsRef<Path>) -> Result<FileId> {
+        let (_, response): (_, CreateResponse) = self.auth_client.request(
+            Command::Create,
+            Some(self.tree_id),
+            CreateRequest {
+                requested_oplock_level: OplockLevel::None,
+                impersonation_level: ImpersonationLevel::Impersonation,
+                desired_access: AccessMask::GENERIC_WRITE | AccessMask::FILE_READ_ATTRIBUTES,
+                file_attributes: FileAttributes::empty(),
+                share_access: FileShareAccess::READ
+                    | FileShareAccess::WRITE
+                    | FileShareAccess::DELETE,
+                create_disposition: FileCreateDisposition::CREATE,
+                create_options: FileCreateOptions::NON_DIRECTORY_FILE,
+                name: path_str(path),
                 create_contexts: vec![],
             },
         )?;
