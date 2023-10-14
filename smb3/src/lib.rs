@@ -1116,6 +1116,24 @@ bitflags! {
 
 impl_serde_for_bitflags!(FileCreateOptions);
 
+/*
+#[derive(SerializeSmbEnum, DeserializeSmbEnum, Clone, Debug, PartialEq)]
+pub enum CreateContext {
+    #[smb(
+        tag = "DHnQ",
+        size = "16",
+        insert_reserved(name = "file_id", int_type = "(u64, u64)")
+    )]
+    DurableHandleRequest,
+}
+
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
+#[smb(next_entry_offset = "align_to(smb_size(&self.body) + 4, 8)")]
+pub struct CreateContextEntry {
+    pub body: CreateContext,
+}
+*/
+
 #[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
 #[smb(size = 57)]
 pub struct CreateRequest {
@@ -1265,4 +1283,58 @@ pub struct FileIdBothDirectoryInformation {
     pub file_id: u64,
     #[smb(collection(count(int_type = "u32", after = "file_attributes", element_size = 2)))]
     pub file_name: String,
+}
+
+#[derive(SerializeWithDiscriminant, DeserializeWithDiscriminant, Copy, Clone, Debug, PartialEq)]
+#[repr(u16)]
+pub enum Channel {
+    None = 0x00000000,
+    RdmaV1 = 0x00000001,
+    RdmaV1Invalidate = 0x00000002,
+    RdmaTransform = 0x00000003,
+}
+
+bitflags! {
+    #[derive(PartialEq, Eq, Copy, Clone, Debug)]
+    pub struct WriteFlags: u32 {
+        const WRITE_THROUGH    = 0x00000001;
+        const WRITE_UNBUFFERED = 0x00000002;
+    }
+}
+
+impl_serde_for_bitflags!(WriteFlags);
+
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
+#[smb(size = 49)]
+pub struct WriteRequest {
+    pub file_id: FileId,
+    pub offset: u64,
+    pub channel: Channel,
+    pub remaining_bytes: u32,
+    pub flags: WriteFlags,
+    #[smb(collection(
+        count(int_type = "u16", after = "size",),
+        offset(int_type = "u16", after = "size", value = "HEADER_SIZE + 48")
+    ))]
+    pub data: Vec<u8>,
+    #[smb(collection(
+        count(int_type = "u16", after = "remaining_bytes",),
+        offset(
+            int_type = "u16",
+            after = "remaining_bytes",
+            value = "HEADER_SIZE + self.data.len() + 48"
+        )
+    ))]
+    pub channel_data: Vec<u8>,
+}
+
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
+#[smb(size = 17)]
+pub struct WriteResponse {
+    #[smb(insert_reserved(
+        name = "remaining_and_write_channel_info",
+        int_type = "(u32, u16, u16)",
+        after = true
+    ))]
+    pub count: u32,
 }

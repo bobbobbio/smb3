@@ -7,8 +7,8 @@ description = "SMBv3.1.1 CLI client"
 license = "MIT"
 
 [dependencies]
-clap = { version = "4", features = ["derive"] }
 chrono = "^0.4"
+clap = { version = "4", features = ["derive"] }
 indicatif = "^0.17"
-smb3_client = { version = "^0.1", path = "../smb3_client" }
 smb3 = { version = "^0.1", path = "../smb3" }
+smb3_client = { version = "^0.1", path = "../smb3_client" }

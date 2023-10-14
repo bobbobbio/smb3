@@ -2,6 +2,7 @@
 
 use chrono::{offset::TimeZone as _, Local};
 use clap::{Parser, Subcommand};
+use indicatif::{ProgressBar, ProgressStyle};
 use smb3_client::Result;
 use std::net::TcpStream;
 use std::path::PathBuf;
@@ -45,9 +46,13 @@ impl Cli {
         Ok(())
     }
 
-    fn upload(&mut self, _local: PathBuf, remote: PathBuf) -> Result<()> {
-        self.client.create_file(remote)?;
-        // TODO
+    fn upload(&mut self, local: PathBuf, remote: PathBuf) -> Result<()> {
+        let file_id = self.client.create_file(remote)?;
+        let file = std::fs::File::open(local)?;
+        let progress = ProgressBar::new(file.metadata()?.len()).with_style(
+            ProgressStyle::with_template("{wide_bar} {percent}% {binary_bytes_per_sec}").unwrap(),
+        );
+        self.client.write_all(file_id, progress.wrap_read(file))?;
         Ok(())
     }
 }

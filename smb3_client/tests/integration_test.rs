@@ -41,7 +41,7 @@ impl<'machine> Fixture<'machine> {
 
     fn query_directory_test(&mut self) {
         self.machine.run_command("touch /files/a /files/b /files/c");
-        let root = self.client.open_root().unwrap();
+        let root = self.client.look_up("/").unwrap();
         let entries_vec = self.client.query_directory(root).unwrap();
         let entries: BTreeSet<_> = entries_vec.iter().map(|e| e.file_name.as_str()).collect();
         assert_eq!(entries, BTreeSet::from_iter([".", "..", "a", "b", "c"]));

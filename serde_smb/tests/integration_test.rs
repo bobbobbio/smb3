@@ -237,3 +237,35 @@ fn insert_reserved() {
     let deserialized: InsertReserved = serde_smb::from_slice(&expected[..]).unwrap();
     assert_eq!(deserialized, f);
 }
+
+#[derive(Debug, PartialEq, SerializeSmbStruct, DeserializeSmbStruct)]
+struct InsertReservedAfter {
+    a: u16,
+    #[smb(insert_reserved(name = "foo", int_type = "u16", after = true))]
+    b: u16,
+    #[smb(insert_reserved(name = "bar", int_type = "u16", after = true))]
+    c: u16,
+}
+
+#[test]
+fn insert_reserved_after() {
+    let f = InsertReservedAfter {
+        a: 0x1122,
+        b: 0x3344,
+        c: 0x5566,
+    };
+
+    let actual = serde_smb::to_vec(&f).unwrap();
+
+    let expected = [
+        0x22, 0x11, // a
+        0x44, 0x33, // b
+        0x00, 0x00, // foo
+        0x66, 0x55, // c
+        0x0, 0x0, // bar
+    ];
+    assert_bytes_equal(&expected, &actual);
+
+    let deserialized: InsertReservedAfter = serde_smb::from_slice(&expected[..]).unwrap();
+    assert_eq!(deserialized, f);
+}

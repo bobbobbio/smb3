@@ -106,6 +106,8 @@ impl Collection {
 struct Reserved {
     name: String,
     int_type: Type,
+    #[darling(default)]
+    after: bool,
 }
 
 impl Reserved {
@@ -126,6 +128,23 @@ impl Reserved {
         Ok(())
     }
 
+    fn insert_after(
+        &self,
+        new_fields: &mut Vec<NewField>,
+        new_field: NewField,
+        before: &Ident,
+    ) -> Result<()> {
+        let index = new_fields
+            .iter()
+            .position(|f| &f.ident == before)
+            .ok_or(Error::new(
+                before.span(),
+                format!("couldn't find field {before}"),
+            ))?;
+        new_fields.insert(index + 1, new_field);
+        Ok(())
+    }
+
     fn evaluate(&self, before: &Ident, new_fields: &mut Vec<NewField>) -> Result<()> {
         let int_type = &self.int_type;
         let new_field = NewField {
@@ -137,7 +156,11 @@ impl Reserved {
             ),
             deser_binding: None,
         };
-        self.insert_before(new_fields, new_field, before)?;
+        if self.after {
+            self.insert_after(new_fields, new_field, before)?;
+        } else {
+            self.insert_before(new_fields, new_field, before)?;
+        }
         Ok(())
     }
 }

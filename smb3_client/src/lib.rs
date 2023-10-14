@@ -414,4 +414,42 @@ impl<TransportT: Transport> Client<TransportT> {
             )?;
         Ok(response.entries.into_iter().map(|e| e.body).collect())
     }
+
+    pub fn write(&mut self, file_id: FileId, offset: u64, data: Vec<u8>) -> Result<u32> {
+        let (_, response): (_, WriteResponse) = self.auth_client.request(
+            Command::Write,
+            Some(self.tree_id),
+            WriteRequest {
+                file_id,
+                offset,
+                channel: Channel::None,
+                remaining_bytes: 0,
+                flags: WriteFlags::empty(),
+                data,
+                channel_data: vec![],
+            },
+        )?;
+        Ok(response.count)
+    }
+
+    pub fn write_all(&mut self, file_id: FileId, mut source: impl io::Read) -> Result<()> {
+        let mut offset = 0;
+        loop {
+            let mut buf = vec![0; 1_048_576];
+            let amount_read = source.read(&mut buf[..])?;
+            if amount_read == 0 {
+                break;
+            }
+
+            buf.resize(amount_read, 0);
+
+            while !buf.is_empty() {
+                let count = self.write(file_id, offset, buf.clone())?;
+                buf = buf[count as usize..].to_owned();
+            }
+
+            offset += amount_read as u64;
+        }
+        Ok(())
+    }
 }
