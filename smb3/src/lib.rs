@@ -1355,18 +1355,18 @@ impl_serde_for_bitflags!(WriteFlags);
 #[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
 #[smb(size = 49)]
 pub struct WriteRequest {
-    pub file_id: FileId,
     pub offset: u64,
+    pub file_id: FileId,
     pub channel: Channel,
     pub remaining_bytes: u32,
     pub flags: WriteFlags,
     #[smb(collection(
-        count(int_type = "u16", after = "size",),
+        count(int_type = "u32", after = "size",),
         offset(int_type = "u16", after = "size", value = "HEADER_SIZE + 48")
     ))]
     pub data: Vec<u8>,
     #[smb(collection(
-        count(int_type = "u16", after = "remaining_bytes",),
+        count(int_type = "u16", after = "remaining_bytes"),
         offset(
             int_type = "u16",
             after = "remaining_bytes",
