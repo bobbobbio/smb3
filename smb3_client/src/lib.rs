@@ -435,7 +435,7 @@ impl<TransportT: Transport> Client<TransportT> {
     pub fn write_all(&mut self, file_id: FileId, mut source: impl io::Read) -> Result<()> {
         let mut offset = 0;
         loop {
-            let mut buf = vec![0; 1_048_576];
+            let mut buf = vec![0; 4096 * 16];
             let amount_read = source.read(&mut buf[..])?;
             if amount_read == 0 {
                 break;
