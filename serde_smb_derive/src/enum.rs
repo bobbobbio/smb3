@@ -32,7 +32,7 @@ struct SerInput {
 pub fn serialize_smb_enum_inner(input: DeriveInput) -> Result<ItemImpl> {
     let self_: Type = type_with_generics(&input.ident, &input.generics);
     let self_name = input.ident.to_string();
-    let impl_generics = input.generics.clone();
+    let impl_generics = &input.generics;
     let impl_where_clause =
         generate_where_clause(&input.generics, parse_quote!(::serde::Serialize));
 
@@ -98,7 +98,7 @@ pub fn serialize_smb_enum_inner(input: DeriveInput) -> Result<ItemImpl> {
 }
 
 pub fn deserialize_smb_enum_inner(input: DeriveInput) -> Result<ItemImpl> {
-    let self_ident = input.ident.clone();
+    let self_ident = &input.ident;
     let self_: Type = type_with_generics(&input.ident, &input.generics);
     let self_generics = input.generics.clone();
     let self_name = input.ident.to_string();
@@ -132,15 +132,13 @@ pub fn deserialize_smb_enum_inner(input: DeriveInput) -> Result<ItemImpl> {
                     Ok(#self_ident::#ident)
                 }
             }
+        } else if v.size == 0 {
+            parse_quote!(#tag => Ok(#self_ident::#ident))
         } else {
-            if v.size == 0 {
-                parse_quote!(#tag => Ok(#self_ident::#ident))
-            } else {
-                parse_quote! {
-                    #tag => Ok(#self_ident::#ident(
-                        seq.next_element()?.ok_or(::serde::de::Error::missing_field("data"))?
-                    ))
-                }
+            parse_quote! {
+                #tag => Ok(#self_ident::#ident(
+                    seq.next_element()?.ok_or(::serde::de::Error::missing_field("data"))?
+                ))
             }
         }
     });
