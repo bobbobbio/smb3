@@ -1214,17 +1214,14 @@ pub struct FileId {
     pub volatile: u64,
 }
 
-bitflags! {
-    #[derive(PartialEq, Eq, Copy, Clone, Debug)]
-    pub struct FileCreateAction: u32 {
-        const SUPERSEDED  = 0x00000000;
-        const OPENED      = 0x00000001;
-        const CREATED     = 0x00000002;
-        const OVERWRITTEN = 0x00000003;
-    }
+#[derive(SerializeWithDiscriminant, DeserializeWithDiscriminant, Copy, Clone, Debug, PartialEq)]
+#[repr(u32)]
+pub enum FileCreateAction {
+    Superseded = 0x00000000,
+    Opened = 0x00000001,
+    Created = 0x00000002,
+    Overwritten = 0x00000003,
 }
-
-impl_serde_for_bitflags!(FileCreateAction);
 
 #[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
 #[smb(size = 89)]
@@ -1243,7 +1240,12 @@ pub struct CreateResponse {
     pub file_id: FileId,
     #[smb(collection(
         count(int_type = "u32", after = "file_id"),
-        offset(int_type = "u32", after = "file_id", value = "HEADER_SIZE + 88")
+        offset(
+            int_type = "u32",
+            after = "file_id",
+            value = "HEADER_SIZE + 88",
+            empty_zero = true
+        )
     ))]
     pub create_contexts: Vec<u8>,
 }

@@ -23,6 +23,8 @@ struct CollectionOffset {
     int_type: Type,
     value: Expr,
     after: Ident,
+    #[darling(default)]
+    empty_zero: bool,
 }
 
 #[derive(Clone, Debug, FromMeta)]
@@ -82,9 +84,18 @@ impl Collection {
             let offset_type = &offset.int_type;
             let value = &offset.value;
             let name = format!("{collection}$offset");
+            let ser_expr = if offset.empty_zero {
+                parse_quote! {
+                    &(if self.#collection.is_empty() { 0 as #offset_type } else { (#value) as #offset_type })
+                }
+            } else {
+                parse_quote! {
+                    &((#value) as #offset_type)
+                }
+            };
             let new_field = NewField {
                 ident: Ident::new(&format!("{collection}_offset"), Span::call_site()),
-                ser_expr: parse_quote!(&((#value) as #offset_type)),
+                ser_expr,
                 deser_expr: parse_quote!(
                     seq.next_element::<#offset_type>()?
                         .ok_or(::serde::de::Error::missing_field(#name))?
