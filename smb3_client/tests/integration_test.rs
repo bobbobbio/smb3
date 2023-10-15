@@ -30,7 +30,7 @@ impl<'machine> Fixture<'machine> {
     }
 
     fn run(&mut self) {
-        let tests = [test!(query_directory_test)];
+        let tests = [test!(query_directory_test), test!(read_write_test)];
 
         for (test, test_name) in tests {
             log::info!("running test {}:Fixture::{}", file!(), test_name);
@@ -45,6 +45,22 @@ impl<'machine> Fixture<'machine> {
         let entries_vec = self.client.query_directory(root).unwrap();
         let entries: BTreeSet<_> = entries_vec.iter().map(|e| e.file_name.as_str()).collect();
         assert_eq!(entries, BTreeSet::from_iter([".", "..", "a", "b", "c"]));
+    }
+
+    fn read_write_test(&mut self) {
+        let file_id = self.client.create_file("/a_file").unwrap();
+
+        let test_contents: Vec<u8> = (0..100_000).map(|v| (v % 255) as u8).collect();
+        self.client
+            .write_all(file_id.clone(), &test_contents[..])
+            .unwrap();
+
+        let file_id = self.client.look_up("/a_file").unwrap();
+        let mut read_data = vec![];
+        self.client
+            .read_all(file_id.clone(), &mut read_data)
+            .unwrap();
+        assert_eq!(read_data, test_contents);
     }
 }
 

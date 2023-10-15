@@ -17,6 +17,8 @@ use std::{io, mem};
 
 pub const PORT: u16 = 445;
 
+const IO_SIZE: usize = 4096 * 16;
+
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, From)]
@@ -77,6 +79,11 @@ impl<TransportT: Transport> UnauthenticatedClient<TransportT> {
         self.next_message_id = MessageId(self.next_message_id.0 + 1);
 
         let mut req_bytes = serde_smb::to_vec(&(header, request))?;
+
+        // wtf??????
+        if command == Command::Read {
+            req_bytes.push(0);
+        }
 
         if let Some(func) = signature_func {
             let sig = func(&req_bytes[..])?;
@@ -271,6 +278,8 @@ impl<TransportT: Transport> AuthenticatedClient<TransportT> {
         &mut self,
         command: Command,
         tree_id: Option<TreeId>,
+        credit_charge: Credits,
+        credits_requested: Credits,
         request: T,
     ) -> Result<(ResponseHeader, R)> {
         let mut sig_func = |bytes: &[u8]| {
@@ -280,8 +289,8 @@ impl<TransportT: Transport> AuthenticatedClient<TransportT> {
         };
         self.unauth_client.request(
             command,
-            Credits(1),
-            Credits(64),
+            credit_charge,
+            credits_requested,
             Some(self.session_id),
             Some(&mut sig_func),
             tree_id,
@@ -293,6 +302,8 @@ impl<TransportT: Transport> AuthenticatedClient<TransportT> {
         let (header, _): (_, TreeConnectResponse) = self.request(
             Command::TreeConnect,
             None,
+            Credits(1),
+            Credits(64),
             TreeConnectRequest {
                 flags: TreeConnectFlags::empty(),
                 path: path.into(),
@@ -357,10 +368,12 @@ impl<TransportT: Transport> Client<TransportT> {
         let (_, response): (_, CreateResponse) = self.auth_client.request(
             Command::Create,
             Some(self.tree_id),
+            Credits(1),
+            Credits(64),
             CreateRequest {
-                requested_oplock_level: OplockLevel::None,
+                requested_oplock_level: OplockLevel::Lease,
                 impersonation_level: ImpersonationLevel::Impersonation,
-                desired_access: AccessMask::FILE_READ_DATA | AccessMask::FILE_READ_EA,
+                desired_access: AccessMask::GENERIC_READ | AccessMask::FILE_READ_ATTRIBUTES,
                 file_attributes: FileAttributes::empty(),
                 share_access: FileShareAccess::READ
                     | FileShareAccess::WRITE
@@ -378,6 +391,8 @@ impl<TransportT: Transport> Client<TransportT> {
         let (_, response): (_, CreateResponse) = self.auth_client.request(
             Command::Create,
             Some(self.tree_id),
+            Credits(1),
+            Credits(64),
             CreateRequest {
                 requested_oplock_level: OplockLevel::None,
                 impersonation_level: ImpersonationLevel::Impersonation,
@@ -403,6 +418,8 @@ impl<TransportT: Transport> Client<TransportT> {
             self.auth_client.request(
                 Command::QueryDirectory,
                 Some(self.tree_id),
+                Credits(1),
+                Credits(64),
                 QueryDirectoryRequest {
                     file_information_class: FileInformationClass::FileIdFullDirectoryInformation,
                     flags: QueryDirectoryFlags::empty(),
@@ -419,6 +436,8 @@ impl<TransportT: Transport> Client<TransportT> {
         let (_, response): (_, WriteResponse) = self.auth_client.request(
             Command::Write,
             Some(self.tree_id),
+            Credits(1),
+            Credits(64),
             WriteRequest {
                 file_id,
                 offset,
@@ -435,7 +454,7 @@ impl<TransportT: Transport> Client<TransportT> {
     pub fn write_all(&mut self, file_id: FileId, mut source: impl io::Read) -> Result<()> {
         let mut offset = 0;
         loop {
-            let mut buf = vec![0; 4096 * 16];
+            let mut buf = vec![0; IO_SIZE];
             let amount_read = source.read(&mut buf[..])?;
             if amount_read == 0 {
                 break;
@@ -449,6 +468,42 @@ impl<TransportT: Transport> Client<TransportT> {
             }
 
             offset += amount_read as u64;
+        }
+        Ok(())
+    }
+
+    pub fn read(&mut self, file_id: FileId, offset: u64, count: u32) -> Result<Vec<u8>> {
+        let (_, response): (_, ReadResponse) = self.auth_client.request(
+            Command::Read,
+            Some(self.tree_id),
+            Credits(1),
+            Credits(9),
+            ReadRequest {
+                padding: 0,
+                flags: ReadFlags::empty(),
+                length: count,
+                offset,
+                file_id,
+                minimum_bytes: 0,
+                channel: Channel::None,
+                remaining_bytes: 0,
+                channel_data: vec![],
+            },
+        )?;
+        Ok(response.data)
+    }
+
+    pub fn read_all(&mut self, file_id: FileId, mut sink: impl io::Write) -> Result<()> {
+        let mut offset = 0;
+        loop {
+            match self.read(file_id, offset, IO_SIZE as u32) {
+                Ok(read_data) => {
+                    offset += read_data.len() as u64;
+                    sink.write_all(&read_data)?;
+                }
+                Err(Error::NtStatus(NtStatus::EndOfFile)) => break,
+                Err(e) => return Err(e),
+            }
         }
         Ok(())
     }

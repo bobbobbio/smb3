@@ -149,6 +149,8 @@ impl<Writer: io::Write> Serializer<Writer> {
             self.pad(4)?;
         } else if lower_name.ends_with("$pad8") {
             self.pad(8)?;
+        } else if lower_name.ends_with("$pad16") {
+            self.pad(16)?;
         } else if lower_name.contains("$pad") {
             return Err(Error::Custom(format!("unsupported pad {name:?}")));
         }
@@ -192,6 +194,9 @@ impl<'a, Writer: io::Write> ser::Serializer for &'a mut Serializer<Writer> {
     }
 
     fn serialize_u8(self, v: u8) -> Result<()> {
+        if let Some(n) = self.pending_offset.take() {
+            self.field_offsets.insert(n, v as usize);
+        }
         Ok(self.writer.write_u8(v)?)
     }
 
@@ -555,7 +560,9 @@ impl<Reader: io::Read> Deserializer<Reader> {
             self.consume_pad(4)?;
         } else if lower_name.ends_with("$pad8") {
             self.consume_pad(8)?;
-        } else if lower_name.ends_with("$pad") {
+        } else if lower_name.ends_with("$pad16") {
+            self.consume_pad(16)?;
+        } else if lower_name.contains("$pad") {
             return Err(Error::Custom(format!("unsupported pad {name:?}")));
         }
         Ok(())
@@ -651,7 +658,17 @@ impl<'de, 'a, Reader: io::Read> de::Deserializer<'de> for &'a mut Deserializer<R
     where
         V: Visitor<'de>,
     {
-        visitor.visit_u8(self.reader.read_u8()?)
+        let value = self.reader.read_u8()?;
+        if let Some(key) = self.pending_offset.take() {
+            self.field_offsets.insert(key, value as usize);
+        }
+        if let Some(key) = self.pending_count.take() {
+            self.counts.insert(key, Count::Elements(value as usize));
+        }
+        if let Some(key) = self.pending_count_as_bytes.take() {
+            self.counts.insert(key, Count::Bytes(value as usize));
+        }
+        visitor.visit_u8(value)
     }
 
     fn deserialize_u16<V>(self, visitor: V) -> Result<V::Value>

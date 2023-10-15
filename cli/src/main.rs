@@ -11,6 +11,7 @@ use std::path::PathBuf;
 enum Command {
     ReadDir { path: PathBuf },
     Upload { local: PathBuf, remote: PathBuf },
+    Download { remote: PathBuf, local: PathBuf },
 }
 
 #[derive(Parser)]
@@ -55,6 +56,24 @@ impl Cli {
         self.client.write_all(file_id, progress.wrap_read(file))?;
         Ok(())
     }
+
+    fn download(&mut self, remote: PathBuf, local: PathBuf) -> Result<()> {
+        let local_file = if local.to_string_lossy().ends_with('/') {
+            local.join(remote.file_name().unwrap())
+        } else {
+            local
+        };
+
+        let file_id = self.client.look_up(&remote)?;
+
+        let size = 5037662208;
+        let progress = ProgressBar::new(size).with_style(
+            ProgressStyle::with_template("{wide_bar} {percent}% {binary_bytes_per_sec}").unwrap(),
+        );
+        let file = std::fs::File::create(local_file)?;
+        self.client.read_all(file_id, progress.wrap_write(file))?;
+        Ok(())
+    }
 }
 
 fn main() -> Result<()> {
@@ -68,6 +87,7 @@ fn main() -> Result<()> {
     match opts.command {
         Command::ReadDir { path } => cli.read_dir(path)?,
         Command::Upload { local, remote } => cli.upload(local, remote)?,
+        Command::Download { remote, local } => cli.download(remote, local)?,
     }
 
     Ok(())

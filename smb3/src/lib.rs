@@ -86,7 +86,7 @@ pub struct RequestHeader {
     pub signature: Signature,
 }
 
-const HEADER_SIZE: usize = 64;
+pub const HEADER_SIZE: usize = 64;
 
 #[derive(SerializeWithDiscriminant, DeserializeWithDiscriminant, Copy, Clone, Debug, PartialEq)]
 #[repr(u32)]
@@ -1117,7 +1117,6 @@ bitflags! {
 impl_serde_for_bitflags!(FileCreateOptions);
 
 #[derive(Serialize, Deserialize, Default, Copy, Clone, Debug, PartialEq)]
-#[serde(rename = "LeaseKey$Pad8")]
 pub struct LeaseKey(pub [u8; 16]);
 
 bitflags! {
@@ -1143,6 +1142,7 @@ impl_serde_for_bitflags!(LeaseFlags);
 
 #[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
 pub struct RequestLease {
+    #[smb(insert_reserved(name = "unknown", int_type = "u32"))]
     pub lease_key: LeaseKey,
     pub lease_state: LeaseState,
     pub flags: LeaseFlags,
@@ -1334,7 +1334,7 @@ pub struct FileIdBothDirectoryInformation {
 }
 
 #[derive(SerializeWithDiscriminant, DeserializeWithDiscriminant, Copy, Clone, Debug, PartialEq)]
-#[repr(u16)]
+#[repr(u32)]
 pub enum Channel {
     None = 0x00000000,
     RdmaV1 = 0x00000001,
@@ -1370,7 +1370,8 @@ pub struct WriteRequest {
         offset(
             int_type = "u16",
             after = "remaining_bytes",
-            value = "HEADER_SIZE + self.data.len() + 48"
+            value = "HEADER_SIZE + self.data.len() + 48",
+            empty_zero = true
         )
     ))]
     pub channel_data: Vec<u8>,
@@ -1385,4 +1386,56 @@ pub struct WriteResponse {
         after = true
     ))]
     pub count: u32,
+}
+
+bitflags! {
+    #[derive(PartialEq, Eq, Copy, Clone, Debug)]
+    pub struct ReadFlags: u8 {
+        const READ_UNBUFFERED    = 0x00000001;
+        const REQUEST_COMPRESSED = 0x00000002;
+    }
+}
+
+impl_serde_for_bitflags!(ReadFlags);
+
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
+#[smb(size = 49)]
+pub struct ReadRequest {
+    pub padding: u8,
+    pub flags: ReadFlags,
+    pub length: u32,
+    pub offset: u64,
+    pub file_id: FileId,
+    pub minimum_bytes: u32,
+    pub channel: Channel,
+    pub remaining_bytes: u32,
+    #[smb(collection(
+        count(int_type = "u16", after = "remaining_bytes"),
+        offset(
+            int_type = "u16",
+            after = "remaining_bytes",
+            value = "HEADER_SIZE + 48",
+            empty_zero = true
+        )
+    ))]
+    pub channel_data: Vec<u8>,
+}
+
+#[derive(SerializeWithDiscriminant, DeserializeWithDiscriminant, Copy, Clone, Debug, PartialEq)]
+#[repr(u32)]
+pub enum ReadResponseFlags {
+    None = 0x00000000,
+    RdmaTransform = 0x00000001,
+}
+
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
+#[smb(size = 17)]
+pub struct ReadResponse {
+    pub data_remaining: u32,
+    pub flags: ReadResponseFlags,
+    #[smb(collection(
+        count(int_type = "u32", after = "size"),
+        offset(int_type = "u8", after = "size", value = "HEADER_SIZE + 16")
+    ))]
+    pub data: Vec<u8>,
 }
