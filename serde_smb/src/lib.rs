@@ -5,7 +5,9 @@ use serde::de::Visitor;
 use serde::{de, ser, Deserialize, Serialize};
 use std::{collections::BTreeMap, fmt, io};
 
-pub use serde_smb_derive::{DeserializeSmbStruct, SerializeSmbStruct};
+pub use serde_smb_derive::{
+    DeserializeSmbEnum, DeserializeSmbStruct, SerializeSmbEnum, SerializeSmbStruct,
+};
 
 type Endianness = byteorder::LittleEndian;
 
@@ -107,8 +109,7 @@ impl<Writer: io::Write> Serializer<Writer> {
     }
 
     fn pad(&mut self, align: usize) -> Result<()> {
-        let padding = self.writer.writer_bytes() % align;
-        for _ in 0..padding {
+        while self.writer.writer_bytes() % align > 0 {
             self.writer.write_u8(0)?;
         }
         Ok(())
@@ -148,7 +149,7 @@ impl<Writer: io::Write> Serializer<Writer> {
             self.pad(4)?;
         } else if lower_name.ends_with("$pad8") {
             self.pad(8)?;
-        } else if lower_name.ends_with("$pad") {
+        } else if lower_name.contains("$pad") {
             return Err(Error::Custom(format!("unsupported pad {name:?}")));
         }
         Ok(())
@@ -278,10 +279,11 @@ impl<'a, Writer: io::Write> ser::Serializer for &'a mut Serializer<Writer> {
         unimplemented!()
     }
 
-    fn serialize_newtype_struct<T>(self, _name: &'static str, value: &T) -> Result<()>
+    fn serialize_newtype_struct<T>(self, name: &'static str, value: &T) -> Result<()>
     where
         T: ?Sized + Serialize,
     {
+        self.handle_padding(name)?;
         value.serialize(&mut *self)
     }
 

@@ -365,7 +365,7 @@ impl<TransportT: Transport> Client<TransportT> {
                 share_access: FileShareAccess::READ
                     | FileShareAccess::WRITE
                     | FileShareAccess::DELETE,
-                create_disposition: FileCreateDisposition::OPEN,
+                create_disposition: FileCreateDisposition::Open,
                 create_options: FileCreateOptions::empty(),
                 name: path_str(path),
                 create_contexts: vec![],
@@ -386,7 +386,7 @@ impl<TransportT: Transport> Client<TransportT> {
                 share_access: FileShareAccess::READ
                     | FileShareAccess::WRITE
                     | FileShareAccess::DELETE,
-                create_disposition: FileCreateDisposition::CREATE,
+                create_disposition: FileCreateDisposition::Create,
                 create_options: FileCreateOptions::NON_DIRECTORY_FILE,
                 name: path_str(path),
                 create_contexts: vec![],

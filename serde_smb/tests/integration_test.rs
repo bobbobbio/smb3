@@ -1,7 +1,7 @@
 // copyright 2023 Remi Bernotavicius
 
 use pretty_assertions::assert_eq;
-use serde_smb::{DeserializeSmbStruct, SerializeSmbStruct};
+use serde_smb::{DeserializeSmbEnum, DeserializeSmbStruct, SerializeSmbEnum, SerializeSmbStruct};
 
 fn assert_bytes_equal(expected: &[u8], actual: &[u8]) {
     if expected != actual {
@@ -267,5 +267,101 @@ fn insert_reserved_after() {
     assert_bytes_equal(&expected, &actual);
 
     let deserialized: InsertReservedAfter = serde_smb::from_slice(&expected[..]).unwrap();
+    assert_eq!(deserialized, f);
+}
+
+#[derive(SerializeSmbEnum, DeserializeSmbEnum, Clone, Debug, PartialEq)]
+pub enum TestEnum {
+    #[smb(tag = "Fool", size = "2")]
+    Foo(u16),
+    #[smb(tag = "Barl", size = "4")]
+    Bar([u16; 2]),
+    #[smb(tag = "Baz", size = "8", reserved_value = "u64", offset = 1)]
+    Baz,
+    #[smb(tag = "Quxl", size = "0")]
+    Qux,
+}
+
+#[test]
+fn test_enum_foo() {
+    let f = TestEnum::Foo(0x1122);
+
+    let actual = serde_smb::to_vec(&f).unwrap();
+
+    let expected = [
+        0x0c, 0x00, // name offset
+        0x04, 0x00, // name length
+        0x00, 0x00, // padding
+        16, 0x00, // data offset
+        0x02, 0x00, 0x00, 0x00, // data length
+        b'F', b'o', b'o', b'l', // name
+        0x22, 0x11,
+    ];
+    assert_bytes_equal(&expected, &actual);
+
+    let deserialized: TestEnum = serde_smb::from_slice(&expected[..]).unwrap();
+    assert_eq!(deserialized, f);
+}
+
+#[test]
+fn test_enum_bar() {
+    let f = TestEnum::Bar([0x1122, 0x3344]);
+
+    let actual = serde_smb::to_vec(&f).unwrap();
+
+    let expected = [
+        0x0c, 0x00, // name offset
+        0x04, 0x00, // name length
+        0x00, 0x00, // padding
+        16, 0x00, // data offset
+        0x04, 0x00, 0x00, 0x00, // data length
+        b'B', b'a', b'r', b'l', // name
+        0x22, 0x11, 0x44, 0x33,
+    ];
+    assert_bytes_equal(&expected, &actual);
+
+    let deserialized: TestEnum = serde_smb::from_slice(&expected[..]).unwrap();
+    assert_eq!(deserialized, f);
+}
+
+#[test]
+fn test_enum_baz_reserved_value() {
+    let f = TestEnum::Baz;
+
+    let actual = serde_smb::to_vec(&f).unwrap();
+
+    let expected = [
+        0x0c, 0x00, // name offset
+        0x03, 0x00, // name length
+        0x00, 0x00, // padding
+        16, 0x00, // data offset
+        0x08, 0x00, 0x00, 0x00, // data length
+        b'B', b'a', b'z', // name
+        0x0,  // padding
+        0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, // reserved
+    ];
+    assert_bytes_equal(&expected, &actual);
+
+    let deserialized: TestEnum = serde_smb::from_slice(&expected[..]).unwrap();
+    assert_eq!(deserialized, f);
+}
+
+#[test]
+fn test_enum_qux_no_value() {
+    let f = TestEnum::Qux;
+
+    let actual = serde_smb::to_vec(&f).unwrap();
+
+    let expected = [
+        0x0c, 0x00, // name offset
+        0x04, 0x00, // name length
+        0x00, 0x00, // padding
+        0x00, 0x00, // data offset
+        0x00, 0x00, 0x00, 0x00, // data length
+        b'Q', b'u', b'x', b'l', // name
+    ];
+    assert_bytes_equal(&expected, &actual);
+
+    let deserialized: TestEnum = serde_smb::from_slice(&expected[..]).unwrap();
     assert_eq!(deserialized, f);
 }

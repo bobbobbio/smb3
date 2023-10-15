@@ -6,7 +6,10 @@ use bitflags_serde_shim::impl_serde_for_bitflags;
 use modular_bitfield::{bitfield, specifiers::*};
 use serde::{Deserialize, Serialize};
 use serde_dis::{DeserializeWithDiscriminant, SerializeWithDiscriminant};
-use serde_smb::{align_to, size as smb_size, DeserializeSmbStruct, SerializeSmbStruct};
+use serde_smb::{
+    align_to, size as smb_size, DeserializeSmbEnum, DeserializeSmbStruct, SerializeSmbEnum,
+    SerializeSmbStruct,
+};
 use std::fmt;
 
 #[derive(SerializeWithDiscriminant, DeserializeWithDiscriminant, Copy, Clone, Debug, PartialEq)]
@@ -1073,19 +1076,16 @@ bitflags! {
 
 impl_serde_for_bitflags!(FileShareAccess);
 
-bitflags! {
-    #[derive(PartialEq, Eq, Copy, Clone, Debug)]
-    pub struct FileCreateDisposition: u32 {
-        const SUPERSEDE    = 0x00000000;
-        const OPEN         = 0x00000001;
-        const CREATE       = 0x00000002;
-        const OPEN_IF      = 0x00000003;
-        const OVERWRITE    = 0x00000004;
-        const OVERWRITE_IF = 0x00000005;
-    }
+#[derive(SerializeWithDiscriminant, DeserializeWithDiscriminant, Copy, Clone, Debug, PartialEq)]
+#[repr(u32)]
+pub enum FileCreateDisposition {
+    Supersede = 0x00000000,
+    Open = 0x00000001,
+    Create = 0x00000002,
+    OpenIf = 0x00000003,
+    Overwrite = 0x00000004,
+    OverwriteIf = 0x00000005,
 }
-
-impl_serde_for_bitflags!(FileCreateDisposition);
 
 bitflags! {
     #[derive(PartialEq, Eq, Copy, Clone, Debug)]
@@ -1116,23 +1116,64 @@ bitflags! {
 
 impl_serde_for_bitflags!(FileCreateOptions);
 
-/*
+#[derive(Serialize, Deserialize, Default, Copy, Clone, Debug, PartialEq)]
+#[serde(rename = "LeaseKey$Pad8")]
+pub struct LeaseKey(pub [u8; 16]);
+
+bitflags! {
+    #[derive(PartialEq, Eq, Copy, Clone, Debug)]
+    pub struct LeaseState: u32 {
+        const LEASE_NONE     = 0x00000000;
+        const READ_CACHING   = 0x00000001;
+        const HANDLE_CACHING = 0x00000002;
+        const WRITE_CACHING  = 0x00000004;
+    }
+}
+
+impl_serde_for_bitflags!(LeaseState);
+
+bitflags! {
+    #[derive(PartialEq, Eq, Copy, Clone, Debug)]
+    pub struct LeaseFlags: u32 {
+        const PARENT_LEASE_KEY_SET = 0x00000004;
+    }
+}
+
+impl_serde_for_bitflags!(LeaseFlags);
+
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
+pub struct RequestLease {
+    pub lease_key: LeaseKey,
+    pub lease_state: LeaseState,
+    pub flags: LeaseFlags,
+    #[smb(insert_reserved(name = "lease_duration", int_type = "u64"))]
+    pub parent_lease_key: LeaseKey,
+    #[smb(insert_reserved(name = "reserved", int_type = "u16", after = true))]
+    pub epoch: u16,
+}
+
 #[derive(SerializeSmbEnum, DeserializeSmbEnum, Clone, Debug, PartialEq)]
+#[smb(offset = 4)]
 pub enum CreateContext {
-    #[smb(
-        tag = "DHnQ",
-        size = "16",
-        insert_reserved(name = "file_id", int_type = "(u64, u64)")
-    )]
+    #[smb(tag = "DHnQ", size = "16", offset = 4, reserved_value = "(u64, u64)")]
     DurableHandleRequest,
+    #[smb(tag = "RqLs", size = "52", offset = 4)]
+    RequestLease(RequestLease),
+    #[smb(tag = "QFid", size = "0", reserved_value = "u32")]
+    QueryOnDiskId,
 }
 
 #[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
-#[smb(next_entry_offset = "align_to(smb_size(&self.body) + 4, 8)")]
+#[smb(next_entry_offset = "align_to(smb_size(&(0u32, &self.body)), 8)")]
 pub struct CreateContextEntry {
     pub body: CreateContext,
 }
-*/
+
+impl From<CreateContext> for CreateContextEntry {
+    fn from(body: CreateContext) -> Self {
+        Self { body }
+    }
+}
 
 #[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
 #[smb(size = 57)]
@@ -1152,14 +1193,19 @@ pub struct CreateRequest {
     ))]
     pub name: String,
     #[smb(collection(
-        count(int_type = "u16", after = "name_count"),
-        offset(
-            int_type = "u16",
+        count(
+            int_type = "u32",
             after = "name_count",
-            value = "HEADER_SIZE + 64 + self.name.len() * 2"
+            as_bytes = true,
+            value = "smb_size(&self.create_contexts)",
+        ),
+        offset(
+            int_type = "u32",
+            after = "name_count",
+            value = "HEADER_SIZE + 58 + self.name.len() * 2"
         )
     ))]
-    pub create_contexts: Vec<u8>,
+    pub create_contexts: Vec<CreateContextEntry>,
 }
 
 #[derive(Serialize, Deserialize, Copy, Clone, Debug, PartialEq)]
