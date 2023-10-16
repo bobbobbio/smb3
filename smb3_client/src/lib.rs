@@ -4,7 +4,7 @@ use byteorder::{BigEndian, ReadBytesExt as _, WriteBytesExt as _};
 use cmac::Mac as _;
 use derive_more::From;
 use rand::Rng as _;
-use serde::Deserialize;
+use serde::{de::DeserializeOwned, Deserialize};
 use sha2::Digest as _;
 use smb3::*;
 use sspi::builders::EmptyInitializeSecurityContext;
@@ -502,5 +502,27 @@ impl<TransportT: Transport> Client<TransportT> {
             }
         }
         Ok(())
+    }
+
+    pub fn query_info<Info: DeserializeOwned + HasFileInformationClass>(
+        &mut self,
+        file_id: FileId,
+    ) -> Result<Info> {
+        let (_, response): (_, QueryInfoResponse<Info>) = self.auth_client.request(
+            Command::QueryInfo,
+            Some(self.tree_id),
+            Credits(1),
+            Credits(64),
+            QueryInfoRequest {
+                info_type: InfoType::File,
+                file_info_class: Info::file_information_class(),
+                output_buffer_length: 8293,
+                additional_information: 0,
+                flags: QueryInfoFlags::empty(),
+                file_id,
+                buffer: vec![],
+            },
+        )?;
+        Ok(response.info)
     }
 }

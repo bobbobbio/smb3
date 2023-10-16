@@ -782,10 +782,24 @@ pub struct NegotiateRequest {
     pub negotiate_contexts: Vec<NegotiateContext>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
 pub struct Time {
     /// The number of 100-nanosecond intervals that have elapsed since January 1st 1601
     pub intervals: i64,
+}
+
+impl fmt::Debug for Time {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        #[cfg(feature = "chrono")]
+        f.debug_tuple("Time").field(&self.to_date_time()).finish()?;
+
+        #[cfg(not(feature = "chrono"))]
+        f.debug_struct("Time")
+            .field("intervals", &self.intervals)
+            .finish()?;
+
+        Ok(())
+    }
 }
 
 #[cfg(feature = "chrono")]
@@ -1250,18 +1264,6 @@ pub struct CreateResponse {
     pub create_contexts: Vec<u8>,
 }
 
-#[derive(SerializeWithDiscriminant, DeserializeWithDiscriminant, Copy, Clone, Debug, PartialEq)]
-#[repr(u8)]
-pub enum FileInformationClass {
-    FileDirectoryInformation = 0x01,
-    FileFullDirectoryInformation = 0x02,
-    FileIdFullDirectoryInformation = 0x26,
-    FileBothDirectoryInformation = 0x03,
-    FileIdBothDirectoryInformation = 0x25,
-    FileNamesInformation = 0x0C,
-    FileIdExtdDirectoryInformation = 0x3C,
-}
-
 bitflags! {
     #[derive(PartialEq, Eq, Copy, Clone, Debug)]
     pub struct QueryDirectoryFlags: u8 {
@@ -1438,4 +1440,280 @@ pub struct ReadResponse {
         offset(int_type = "u8", after = "size", value = "HEADER_SIZE + 16")
     ))]
     pub data: Vec<u8>,
+}
+
+#[derive(SerializeWithDiscriminant, DeserializeWithDiscriminant, Copy, Clone, Debug, PartialEq)]
+#[repr(u8)]
+pub enum InfoType {
+    File = 0x01,
+    Filesystem = 0x02,
+    Security = 0x03,
+    Quota = 0x04,
+}
+
+#[derive(SerializeWithDiscriminant, DeserializeWithDiscriminant, Copy, Clone, Debug, PartialEq)]
+#[repr(u8)]
+pub enum FileInformationClass {
+    FileAccessInformation = 8,
+    FileAlignmentInformation = 17,
+    FileAllInformation = 18,
+    FileAllocationInformation = 19,
+    FileAlternateNameInformation = 21,
+    FileAttributeTagInformation = 35,
+    FileBasicInformation = 4,
+    FileBothDirectoryInformation = 3,
+    FileCompressionInformation = 28,
+    FileDirectoryInformation = 1,
+    FileDispositionInformation = 13,
+    FileEaInformation = 7,
+    FileEndOfFileInformation = 20,
+    FileFullDirectoryInformation = 2,
+    FileFullEaInformation = 15,
+    FileHardLinkInformation = 46,
+    FileIdBothDirectoryInformation = 37,
+    FileIdExtdDirectoryInformation = 60,
+    FileIdFullDirectoryInformation = 38,
+    FileIdGlobalTxDirectoryInformation = 50,
+    FileIdInformation = 59,
+    FileInternalInformation = 6,
+    FileLinkInformation = 11,
+    FileMailslotQueryInformation = 26,
+    FileMailslotSetInformation = 27,
+    FileModeInformation = 16,
+    FileMoveClusterInformation = 31,
+    FileNameInformation = 9,
+    FileNamesInformation = 12,
+    FileNetworkOpenInformation = 34,
+    FileNormalizedNameInformation = 48,
+    FileObjectIdInformation = 29,
+    FilePipeInformation = 23,
+    FilePipeLocalInformation = 24,
+    FilePipeRemoteInformation = 25,
+    FilePositionInformation = 14,
+    FileQuotaInformation = 32,
+    FileRenameInformation = 10,
+    FileReparsePointInformation = 33,
+    FileSfioReserveInformation = 44,
+    FileSfioVolumeInformation = 45,
+    FileShortNameInformation = 40,
+    FileStandardInformation = 5,
+    FileStandardLinkInformation = 54,
+    FileStreamInformation = 22,
+    FileTrackingInformation = 36,
+    FileValidDataLengthInformation = 39,
+}
+
+bitflags! {
+    #[derive(PartialEq, Eq, Copy, Clone, Debug)]
+    pub struct QueryInfoFlags: u32 {
+        const RESTART_SCAN = 0x00000001;
+        const RETURN_SINGLE_ENTRY = 0x00000002;
+        const INDEX_SPECIFIED = 0x00000004;
+    }
+}
+
+impl_serde_for_bitflags!(QueryInfoFlags);
+
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
+#[smb(size = 41)]
+pub struct QueryInfoRequest {
+    pub info_type: InfoType,
+    pub file_info_class: FileInformationClass,
+    pub output_buffer_length: u32,
+    pub additional_information: u32,
+    pub flags: QueryInfoFlags,
+    pub file_id: FileId,
+    #[smb(collection(
+        count(int_type = "u32", after = "output_buffer_length"),
+        offset(
+            int_type = "u16",
+            after = "output_buffer_length",
+            value = "HEADER_SIZE + 40",
+            empty_zero = true
+        )
+    ))]
+    pub buffer: Vec<u8>,
+}
+
+pub trait HasFileInformationClass {
+    fn file_information_class() -> FileInformationClass;
+}
+
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
+pub struct FileAllocationInformation {
+    pub allocation_size: u64,
+}
+
+impl HasFileInformationClass for FileAllocationInformation {
+    fn file_information_class() -> FileInformationClass {
+        FileInformationClass::FileAllocationInformation
+    }
+}
+
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
+pub struct FileBasicInformation {
+    pub creation_time: Time,
+    pub last_access_time: Time,
+    pub last_write_time: Time,
+    pub change_time: Time,
+    #[smb(insert_reserved(name = "reserved", int_type = "u32", after = true))]
+    pub file_attributes: FileAttributes,
+}
+
+impl HasFileInformationClass for FileBasicInformation {
+    fn file_information_class() -> FileInformationClass {
+        FileInformationClass::FileBasicInformation
+    }
+}
+
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
+pub struct FileInternalInformation {
+    pub index_number: u64,
+}
+
+impl HasFileInformationClass for FileInternalInformation {
+    fn file_information_class() -> FileInformationClass {
+        FileInformationClass::FileInternalInformation
+    }
+}
+
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
+pub struct FileEaInformation {
+    pub ea_size: u32,
+}
+
+impl HasFileInformationClass for FileEaInformation {
+    fn file_information_class() -> FileInformationClass {
+        FileInformationClass::FileEaInformation
+    }
+}
+
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
+pub struct FileAccessInformation {
+    pub access_flags: AccessMask,
+}
+
+impl HasFileInformationClass for FileAccessInformation {
+    fn file_information_class() -> FileInformationClass {
+        FileInformationClass::FileAccessInformation
+    }
+}
+
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
+pub struct FilePositionInformation {
+    pub current_byte_offset: u64,
+}
+
+impl HasFileInformationClass for FilePositionInformation {
+    fn file_information_class() -> FileInformationClass {
+        FileInformationClass::FilePositionInformation
+    }
+}
+
+bitflags! {
+    #[derive(PartialEq, Eq, Copy, Clone, Debug)]
+    pub struct FileMode: u32 {
+        const WRITE_THROUGH = 0x00000002;
+        const SEQUENTIAL_ONLY = 0x00000004;
+        const NO_INTERMEDIATE_BUFFERING = 0x00000008;
+        const SYNCHRONOUS_IO_ALERT = 0x00000010;
+        const SYNCHRONOUS_IO_NONALERT = 0x00000020;
+        const DELETE_ON_CLOSE = 0x00001000;
+    }
+}
+
+impl_serde_for_bitflags!(FileMode);
+
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
+pub struct FileModeInformation {
+    pub mode: FileMode,
+}
+
+impl HasFileInformationClass for FileModeInformation {
+    fn file_information_class() -> FileInformationClass {
+        FileInformationClass::FileModeInformation
+    }
+}
+
+#[derive(SerializeWithDiscriminant, DeserializeWithDiscriminant, Copy, Clone, Debug, PartialEq)]
+#[repr(u32)]
+pub enum FileAlignmentRequirement {
+    FileByteAlignment = 0x00000000,
+    FileWordAlignment = 0x00000001,
+    FileLongAlignment = 0x00000003,
+    FileQuadAlignment = 0x00000007,
+    FileOctaAlignment = 0x0000000F,
+    File32ByteAlignment = 0x0000001F,
+    File64ByteAlignment = 0x0000003F,
+    File128ByteAlignment = 0x0000007F,
+    File256ByteAlignment = 0x000000FF,
+    File512ByteAlignment = 0x000001FF,
+}
+
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
+pub struct FileAlignmentInformation {
+    pub alignment_requirement: FileAlignmentRequirement,
+}
+
+impl HasFileInformationClass for FileAlignmentInformation {
+    fn file_information_class() -> FileInformationClass {
+        FileInformationClass::FileAlignmentInformation
+    }
+}
+
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
+pub struct FileAllInformation {
+    pub basic: FileBasicInformation,
+    pub standard: FileStandardInformation,
+    pub internal: FileInternalInformation,
+    pub ea: FileEaInformation,
+    pub access: FileAccessInformation,
+    pub position: FilePositionInformation,
+    pub mode: FileModeInformation,
+    pub alignment: FileAlignmentInformation,
+    pub name: FileNameInformation,
+}
+
+impl HasFileInformationClass for FileAllInformation {
+    fn file_information_class() -> FileInformationClass {
+        FileInformationClass::FileAllInformation
+    }
+}
+
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
+pub struct FileNameInformation {
+    #[smb(collection(count(int_type = "u32", element_size = 2)))]
+    pub name: String,
+}
+
+impl HasFileInformationClass for FileNameInformation {
+    fn file_information_class() -> FileInformationClass {
+        FileInformationClass::FileNameInformation
+    }
+}
+
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
+pub struct FileStandardInformation {
+    pub allocation_size: u64,
+    pub end_of_file: u64,
+    pub number_of_links: u32,
+    pub delete_pending: bool,
+    #[smb(insert_reserved(name = "reserved", int_type = "u16", after = true))]
+    pub directory: bool,
+}
+
+impl HasFileInformationClass for FileStandardInformation {
+    fn file_information_class() -> FileInformationClass {
+        FileInformationClass::FileStandardInformation
+    }
+}
+
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
+#[smb(size = 9)]
+pub struct QueryInfoResponse<Info> {
+    #[smb(collection(
+        count(int_type = "u32", after = "size", value = "smb_size(&self.info)"),
+        offset(int_type = "u16", after = "size", value = "HEADER_SIZE + 8")
+    ))]
+    pub info: Info,
 }

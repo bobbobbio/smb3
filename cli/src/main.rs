@@ -3,6 +3,7 @@
 use chrono::{offset::TimeZone as _, Local};
 use clap::{Parser, Subcommand};
 use indicatif::{ProgressBar, ProgressStyle};
+use smb3::FileAllInformation;
 use smb3_client::Result;
 use std::net::TcpStream;
 use std::path::PathBuf;
@@ -12,6 +13,7 @@ enum Command {
     ReadDir { path: PathBuf },
     Upload { local: PathBuf, remote: PathBuf },
     Download { remote: PathBuf, local: PathBuf },
+    QueryInfo { remote: PathBuf },
 }
 
 #[derive(Parser)]
@@ -74,6 +76,13 @@ impl Cli {
         self.client.read_all(file_id, progress.wrap_write(file))?;
         Ok(())
     }
+
+    fn query_info(&mut self, remote: PathBuf) -> Result<()> {
+        let file_id = self.client.look_up(&remote)?;
+        let info: FileAllInformation = self.client.query_info(file_id)?;
+        println!("{info:#?}");
+        Ok(())
+    }
 }
 
 fn main() -> Result<()> {
@@ -88,6 +97,7 @@ fn main() -> Result<()> {
         Command::ReadDir { path } => cli.read_dir(path)?,
         Command::Upload { local, remote } => cli.upload(local, remote)?,
         Command::Download { remote, local } => cli.download(remote, local)?,
+        Command::QueryInfo { remote } => cli.query_info(remote)?,
     }
 
     Ok(())

@@ -11,7 +11,7 @@ use syn::{
 #[derive(Clone, Debug, FromMeta)]
 struct CollectionCount {
     int_type: Type,
-    after: Ident,
+    after: Option<Ident>,
     element_size: Option<LitInt>,
     value: Option<Expr>,
     #[darling(default)]
@@ -22,7 +22,7 @@ struct CollectionCount {
 struct CollectionOffset {
     int_type: Type,
     value: Expr,
-    after: Ident,
+    after: Option<Ident>,
     #[darling(default)]
     empty_zero: bool,
 }
@@ -51,6 +51,23 @@ impl Collection {
         Ok(())
     }
 
+    fn insert_before(
+        &self,
+        new_fields: &mut Vec<NewField>,
+        new_field: NewField,
+        before: &Ident,
+    ) -> Result<()> {
+        let index = new_fields
+            .iter()
+            .position(|f| &f.ident == before)
+            .ok_or(Error::new(
+                before.span(),
+                format!("couldn't find field {before}"),
+            ))?;
+        new_fields.insert(index, new_field);
+        Ok(())
+    }
+
     fn handle_count(&self, collection: &Ident, new_fields: &mut Vec<NewField>) -> Result<()> {
         let count_type = &self.count.int_type;
         let element_size = self.count.element_size.clone().unwrap_or(parse_quote!(1));
@@ -75,7 +92,11 @@ impl Collection {
             name,
             deser_binding: None,
         };
-        self.insert_after(new_fields, new_field, &self.count.after)?;
+        if let Some(after) = &self.count.after {
+            self.insert_after(new_fields, new_field, after)?;
+        } else {
+            self.insert_before(new_fields, new_field, collection)?;
+        }
         Ok(())
     }
 
@@ -103,7 +124,11 @@ impl Collection {
                 name,
                 deser_binding: None,
             };
-            self.insert_after(new_fields, new_field, &offset.after)?;
+            if let Some(after) = &offset.after {
+                self.insert_after(new_fields, new_field, after)?;
+            } else {
+                self.insert_before(new_fields, new_field, collection)?;
+            }
         }
         Ok(())
     }
