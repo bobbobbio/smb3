@@ -80,11 +80,6 @@ impl<TransportT: Transport> UnauthenticatedClient<TransportT> {
 
         let mut req_bytes = serde_smb::to_vec(&(header, request))?;
 
-        // wtf??????
-        if command == Command::Read {
-            req_bytes.push(0);
-        }
-
         if let Some(func) = signature_func {
             let sig = func(&req_bytes[..])?;
             req_bytes[48..64].clone_from_slice(&sig.0[..]);
@@ -487,7 +482,8 @@ impl<TransportT: Transport> Client<TransportT> {
                 minimum_bytes: 0,
                 channel: Channel::None,
                 remaining_bytes: 0,
-                channel_data: vec![],
+                // this can't be empty for some reason
+                channel_data: vec![0],
             },
         )?;
         Ok(response.data)
