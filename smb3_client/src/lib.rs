@@ -525,4 +525,29 @@ impl<TransportT: Transport> Client<TransportT> {
         )?;
         Ok(response.info)
     }
+
+    pub fn close(&mut self, file_id: FileId) -> Result<CloseResponse> {
+        let (_, response): (_, CloseResponse) = self.auth_client.request(
+            Command::Close,
+            Some(self.tree_id),
+            Credits(1),
+            Credits(64),
+            CloseRequest {
+                flags: CloseFlags::empty(),
+                file_id,
+            },
+        )?;
+        Ok(response)
+    }
+
+    pub fn flush(&mut self, file_id: FileId) -> Result<()> {
+        let (_, _response): (_, FlushResponse) = self.auth_client.request(
+            Command::Flush,
+            Some(self.tree_id),
+            Credits(1),
+            Credits(64),
+            FlushRequest { file_id },
+        )?;
+        Ok(())
+    }
 }

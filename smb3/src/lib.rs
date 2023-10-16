@@ -92,6 +92,7 @@ pub const HEADER_SIZE: usize = 64;
 #[repr(u32)]
 pub enum NtStatus {
     Success = 0x00000000,
+    Pending = 0x00000103,
     InvalidSmb = 0x00010002,
     BadTid = 0x00050002,
     BadCommand = 0x00160002,
@@ -1717,3 +1718,45 @@ pub struct QueryInfoResponse<Info> {
     ))]
     pub info: Info,
 }
+
+bitflags! {
+    #[derive(PartialEq, Eq, Copy, Clone, Debug)]
+    pub struct CloseFlags: u16 {
+        const POSTQUERY_ATTRIB = 0x0001;
+    }
+}
+
+impl_serde_for_bitflags!(CloseFlags);
+
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
+#[smb(size = 24)]
+pub struct CloseRequest {
+    pub flags: CloseFlags,
+    #[smb(insert_reserved(name = "reserved", int_type = "u32"))]
+    pub file_id: FileId,
+}
+
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
+#[smb(size = 60)]
+pub struct CloseResponse {
+    pub flags: CloseFlags,
+    #[smb(insert_reserved(name = "reserved", int_type = "u32"))]
+    pub creation_time: Time,
+    pub last_access_time: Time,
+    pub last_write_time: Time,
+    pub change_time: Time,
+    pub allocation_time: u64,
+    pub end_of_file: u64,
+    pub file_attributes: FileAttributes,
+}
+
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
+#[smb(size = 24)]
+pub struct FlushRequest {
+    #[smb(insert_reserved(name = "reserved", int_type = "u32"))]
+    pub file_id: FileId,
+}
+
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
+#[smb(size = 4, insert_reserved(name = "reserved", int_type = "u16"))]
+pub struct FlushResponse;

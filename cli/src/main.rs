@@ -46,6 +46,7 @@ impl Cli {
             let file_name = entry.file_name;
             println!("{change_str:31} {file_name}");
         }
+        self.client.close(root)?;
         Ok(())
     }
 
@@ -56,6 +57,8 @@ impl Cli {
             ProgressStyle::with_template("{wide_bar} {percent}% {binary_bytes_per_sec}").unwrap(),
         );
         self.client.write_all(file_id, progress.wrap_read(file))?;
+        self.client.flush(file_id)?;
+        self.client.close(file_id)?;
         Ok(())
     }
 
@@ -74,6 +77,8 @@ impl Cli {
         );
         let file = std::fs::File::create(local_file)?;
         self.client.read_all(file_id, progress.wrap_write(file))?;
+        self.client.close(file_id)?;
+
         Ok(())
     }
 
@@ -81,6 +86,7 @@ impl Cli {
         let file_id = self.client.look_up(&remote)?;
         let info: FileAllInformation = self.client.query_info(file_id)?;
         println!("{info:#?}");
+        self.client.close(file_id)?;
         Ok(())
     }
 }

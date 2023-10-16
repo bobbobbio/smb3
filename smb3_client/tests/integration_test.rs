@@ -1,14 +1,14 @@
 // Copyright Remi Bernotavicius
 
+use assert_matches::assert_matches;
 use serde::de::DeserializeOwned;
 use smb3::{
     AccessMask, FileAccessInformation, FileAlignmentInformation, FileAlignmentRequirement,
     FileAllInformation, FileAttributes, FileBasicInformation, FileEaInformation, FileId,
     FileInternalInformation, FileMode, FileModeInformation, FileNameInformation,
-    FilePositionInformation, FileStandardInformation, HasFileInformationClass, Time,
+    FilePositionInformation, FileStandardInformation, HasFileInformationClass, NtStatus, Time,
 };
-use smb3_client::Client;
-use smb3_client::PORT;
+use smb3_client::{Client, Error, PORT};
 use std::collections::BTreeSet;
 use std::net::TcpStream;
 
@@ -60,6 +60,7 @@ impl<'machine> Fixture<'machine> {
     fn get_file_size(&mut self, path: &str) -> u64 {
         let file_id = self.client.look_up(path).unwrap();
         let reply: FileStandardInformation = self.client.query_info(file_id).unwrap();
+        self.client.close(file_id).unwrap();
         reply.end_of_file
     }
 
@@ -83,6 +84,7 @@ impl<'machine> Fixture<'machine> {
         let entries_vec = self.client.query_directory(root).unwrap();
         let entries: BTreeSet<_> = entries_vec.iter().map(|e| e.file_name.as_str()).collect();
         assert_eq!(entries, BTreeSet::from_iter([".", "..", "a", "b", "c"]));
+        self.client.close(root).unwrap();
     }
 
     fn read_write_test(&mut self) {
@@ -93,6 +95,14 @@ impl<'machine> Fixture<'machine> {
             .write_all(file_id.clone(), &test_contents[..])
             .unwrap();
 
+        // This causes something weird to happen
+        if false {
+            assert_matches!(
+                self.client.flush(file_id).unwrap_err(),
+                Error::NtStatus(NtStatus::Pending)
+            );
+        }
+
         let file_id = self.client.look_up("/a_file").unwrap();
         let mut read_data = vec![];
         self.client
@@ -101,6 +111,8 @@ impl<'machine> Fixture<'machine> {
         assert_eq!(read_data, test_contents);
 
         assert_eq!(self.get_file_size("/a_file"), read_data.len() as u64);
+
+        self.client.close(file_id).unwrap();
     }
 
     fn query_info_test(&mut self) {
@@ -190,6 +202,8 @@ impl<'machine> Fixture<'machine> {
             self.query_info::<FileNameInformation>(file_id),
             expected.name
         );
+
+        self.client.close(file_id).unwrap();
     }
 }
 

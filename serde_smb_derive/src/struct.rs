@@ -183,7 +183,7 @@ impl Reserved {
         Ok(())
     }
 
-    fn evaluate(&self, before: &Ident, new_fields: &mut Vec<NewField>) -> Result<()> {
+    fn evaluate(&self, mark: &Ident, new_fields: &mut Vec<NewField>) -> Result<()> {
         let int_type = &self.int_type;
         let name = self.name.clone();
         let new_field = NewField {
@@ -197,9 +197,9 @@ impl Reserved {
             deser_binding: None,
         };
         if self.after {
-            self.insert_after(new_fields, new_field, before)?;
+            self.insert_after(new_fields, new_field, mark)?;
         } else {
-            self.insert_before(new_fields, new_field, before)?;
+            self.insert_before(new_fields, new_field, mark)?;
         }
         Ok(())
     }
@@ -225,7 +225,7 @@ impl StructField {
 }
 
 #[derive(Clone, Debug, FromDeriveInput)]
-#[darling(supports(struct_named))]
+#[darling(supports(struct_any))]
 #[darling(attributes(smb))]
 struct SerInput {
     ident: Ident,
@@ -233,6 +233,7 @@ struct SerInput {
     size: Option<Expr>,
     next_entry_offset: Option<Expr>,
     pad: Option<usize>,
+    insert_reserved: Option<Reserved>,
 }
 
 fn evaluate_size(size: Option<Expr>, new_fields: &mut Vec<NewField>) -> Result<()> {
@@ -332,6 +333,9 @@ fn handle_input(input: DeriveInput) -> Result<(String, Vec<NewField>)> {
 
     evaluate_next_entry_offset(input.next_entry_offset, &mut new_fields)?;
     evaluate_size(input.size, &mut new_fields)?;
+    if let Some(reserved) = &input.insert_reserved {
+        reserved.evaluate(&new_fields[0].ident.clone(), &mut new_fields)?;
+    }
 
     for (before, reserved) in reserved {
         reserved.evaluate(&before, &mut new_fields)?;

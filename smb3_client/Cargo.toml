@@ -21,6 +21,7 @@ smb3 = { path = "../smb3", version = "^0.1" }
 sspi-bobbobbio = { version = "0.10.1" }
 
 [dev-dependencies]
+assert_matches = "^1.5"
 log = "^0.4"
 vm_test_fixture = { version = "^0.1.1" }
 vm_runner = { version = "^0.1.1" }
