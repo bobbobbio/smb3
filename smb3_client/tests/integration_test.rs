@@ -1,13 +1,14 @@
 // Copyright Remi Bernotavicius
 
+use assert_matches::assert_matches;
 use serde::de::DeserializeOwned;
 use smb3::{
     AccessMask, FileAccessInformation, FileAlignmentInformation, FileAlignmentRequirement,
     FileAllInformation, FileAttributes, FileBasicInformation, FileEaInformation, FileId,
     FileInternalInformation, FileMode, FileModeInformation, FileNameInformation,
-    FilePositionInformation, FileStandardInformation, HasFileInformationClass, Time,
+    FilePositionInformation, FileStandardInformation, HasFileInformationClass, NtStatus, Time,
 };
-use smb3_client::{Client, PORT};
+use smb3_client::{Client, Error, PORT};
 use std::collections::BTreeSet;
 use std::net::TcpStream;
 
@@ -40,6 +41,7 @@ impl<'machine> Fixture<'machine> {
             test!(query_directory_test),
             test!(query_info_test),
             test!(read_write_test),
+            test!(delete_test),
         ];
 
         for (test, test_name) in tests {
@@ -196,6 +198,16 @@ impl<'machine> Fixture<'machine> {
         );
 
         self.client.close(file_id).unwrap();
+    }
+
+    fn delete_test(&mut self) {
+        let file_id = self.client.create_file("/a_file").unwrap();
+        self.client.close(file_id).unwrap();
+        self.client.delete("/a_file").unwrap();
+        assert_matches!(
+            self.client.look_up("/a_file").unwrap_err(),
+            Error::NtStatus(NtStatus::ObjectNameNotFound)
+        );
     }
 }
 

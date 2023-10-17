@@ -374,7 +374,7 @@ impl<TransportT: Transport> Client<TransportT> {
             Credits(1),
             Credits(64),
             CreateRequest {
-                requested_oplock_level: OplockLevel::Lease,
+                requested_oplock_level: OplockLevel::None,
                 impersonation_level: ImpersonationLevel::Impersonation,
                 desired_access: AccessMask::GENERIC_READ | AccessMask::FILE_READ_ATTRIBUTES,
                 file_attributes: FileAttributes::empty(),
@@ -411,6 +411,30 @@ impl<TransportT: Transport> Client<TransportT> {
             },
         )?;
         Ok(response.file_id)
+    }
+
+    pub fn delete(&mut self, path: impl AsRef<Path>) -> Result<()> {
+        let (_, response): (_, CreateResponse) = self.auth_client.request(
+            Command::Create,
+            Some(self.tree_id),
+            Credits(1),
+            Credits(64),
+            CreateRequest {
+                requested_oplock_level: OplockLevel::None,
+                impersonation_level: ImpersonationLevel::Impersonation,
+                desired_access: AccessMask::DELETE,
+                file_attributes: FileAttributes::empty(),
+                share_access: FileShareAccess::READ
+                    | FileShareAccess::WRITE
+                    | FileShareAccess::DELETE,
+                create_disposition: FileCreateDisposition::Open,
+                create_options: FileCreateOptions::DELETE_ON_CLOSE,
+                name: path_str(path),
+                create_contexts: vec![],
+            },
+        )?;
+        self.close(response.file_id)?;
+        Ok(())
     }
 
     pub fn query_directory(

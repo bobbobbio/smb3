@@ -14,6 +14,7 @@ enum Command {
     Upload { local: PathBuf, remote: PathBuf },
     Download { remote: PathBuf, local: PathBuf },
     QueryInfo { remote: PathBuf },
+    Delete { remote: PathBuf },
 }
 
 #[derive(Parser)]
@@ -89,6 +90,11 @@ impl Cli {
         self.client.close(file_id)?;
         Ok(())
     }
+
+    fn delete(&mut self, remote: PathBuf) -> Result<()> {
+        self.client.delete(remote)?;
+        Ok(())
+    }
 }
 
 fn main() -> Result<()> {
@@ -104,6 +110,7 @@ fn main() -> Result<()> {
         Command::Upload { local, remote } => cli.upload(local, remote)?,
         Command::Download { remote, local } => cli.download(remote, local)?,
         Command::QueryInfo { remote } => cli.query_info(remote)?,
+        Command::Delete { remote } => cli.delete(remote)?,
     }
 
     Ok(())
