@@ -1,14 +1,13 @@
 // Copyright Remi Bernotavicius
 
-use assert_matches::assert_matches;
 use serde::de::DeserializeOwned;
 use smb3::{
     AccessMask, FileAccessInformation, FileAlignmentInformation, FileAlignmentRequirement,
     FileAllInformation, FileAttributes, FileBasicInformation, FileEaInformation, FileId,
     FileInternalInformation, FileMode, FileModeInformation, FileNameInformation,
-    FilePositionInformation, FileStandardInformation, HasFileInformationClass, NtStatus, Time,
+    FilePositionInformation, FileStandardInformation, HasFileInformationClass, Time,
 };
-use smb3_client::{Client, Error, PORT};
+use smb3_client::{Client, PORT};
 use std::collections::BTreeSet;
 use std::net::TcpStream;
 
@@ -94,14 +93,7 @@ impl<'machine> Fixture<'machine> {
         self.client
             .write_all(file_id.clone(), &test_contents[..])
             .unwrap();
-
-        // This causes something weird to happen
-        if false {
-            assert_matches!(
-                self.client.flush(file_id).unwrap_err(),
-                Error::NtStatus(NtStatus::Pending)
-            );
-        }
+        self.client.flush(file_id).unwrap();
 
         let file_id = self.client.look_up("/a_file").unwrap();
         let mut read_data = vec![];

@@ -94,19 +94,27 @@ impl<TransportT: Transport> UnauthenticatedClient<TransportT> {
             .write_u32::<BigEndian>(req_bytes.len() as u32)?;
         self.transport.write_all(&req_bytes)?;
 
-        let len = self.transport.read_u32::<BigEndian>()?;
-        let mut response_bytes = vec![0; len as usize];
-        self.transport.read_exact(&mut response_bytes)?;
+        let mut response_header: ResponseHeader;
+        let mut response_bytes: Vec<u8>;
+        let mut deser = loop {
+            let len = self.transport.read_u32::<BigEndian>()?;
+            response_bytes = vec![0; len as usize];
+            self.transport.read_exact(&mut response_bytes)?;
 
-        let mut deser = serde_smb::Deserializer::new(&response_bytes[..]);
-        let response_header: ResponseHeader = Deserialize::deserialize(&mut deser)?;
+            let mut deser = serde_smb::Deserializer::new(&response_bytes[..]);
+            response_header = Deserialize::deserialize(&mut deser)?;
 
-        if response_header.signature == Signature([0; 16]) {
-            let mut hasher = sha2::Sha512::new();
-            hasher.update(&self.pre_auth_hash);
-            hasher.update(&response_bytes);
-            self.pre_auth_hash = hasher.finalize().to_vec();
-        }
+            if response_header.signature == Signature([0; 16]) {
+                let mut hasher = sha2::Sha512::new();
+                hasher.update(&self.pre_auth_hash);
+                hasher.update(&response_bytes);
+                self.pre_auth_hash = hasher.finalize().to_vec();
+            }
+
+            if response_header.nt_status != NtStatus::Pending {
+                break deser;
+            }
+        };
 
         if response_header.nt_status == NtStatus::Success
             || response_header.nt_status == NtStatus::MoreProcessingRequired
