@@ -38,7 +38,8 @@ impl<'machine> Fixture<'machine> {
 
     fn run(&mut self) {
         let tests = [
-            test!(query_directory_test),
+            test!(query_directory_test_small),
+            test!(query_directory_test_large),
             test!(query_info_test),
             test!(read_write_test),
             test!(delete_test),
@@ -79,13 +80,40 @@ impl<'machine> Fixture<'machine> {
     //  \__\___||___/\__|___/
     //
 
-    fn query_directory_test(&mut self) {
-        self.machine.run_command("touch /files/a /files/b /files/c");
+    fn query_directory_test_with_dir_size(&mut self, size: usize) {
+        // Create entries with pretty large names, this helps us ensure some pagination
+        let entries_to_create: Vec<_> = (0..size)
+            .map(|n| {
+                format!(
+                    "{}_{n}",
+                    std::iter::repeat('a').take(120).collect::<String>()
+                )
+            })
+            .collect();
+        for f in &entries_to_create {
+            let file_id = self.client.create_file(format!("/{f}")).unwrap();
+            self.client.close(file_id).unwrap();
+        }
+
         let root = self.client.look_up("/").unwrap();
         let entries_vec = self.client.query_directory(root).unwrap();
-        let entries: BTreeSet<_> = entries_vec.iter().map(|e| e.file_name.as_str()).collect();
-        assert_eq!(entries, BTreeSet::from_iter([".", "..", "a", "b", "c"]));
+        let entries: BTreeSet<_> = entries_vec.into_iter().map(|e| e.file_name).collect();
+        let expected_entires = BTreeSet::from_iter(
+            [".".into(), "..".into()]
+                .into_iter()
+                .chain(entries_to_create.into_iter()),
+        );
+        assert_eq!(entries.len(), expected_entires.len());
+        assert_eq!(entries, expected_entires);
         self.client.close(root).unwrap();
+    }
+
+    fn query_directory_test_small(&mut self) {
+        self.query_directory_test_with_dir_size(5);
+    }
+
+    fn query_directory_test_large(&mut self) {
+        self.query_directory_test_with_dir_size(60);
     }
 
     fn read_write_test(&mut self) {

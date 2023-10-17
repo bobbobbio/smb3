@@ -441,8 +441,10 @@ impl<TransportT: Transport> Client<TransportT> {
         &mut self,
         file_id: FileId,
     ) -> Result<Vec<FileIdBothDirectoryInformation>> {
-        let (_, response): (_, QueryDirectoryResponse<FileIdBothDirectoryInformation>) =
-            self.auth_client.request(
+        let mut output = vec![];
+
+        loop {
+            let res = self.auth_client.request(
                 Command::QueryDirectory,
                 Some(self.tree_id),
                 Credits(1),
@@ -455,8 +457,16 @@ impl<TransportT: Transport> Client<TransportT> {
                     output_buffer_length: 15380,
                     search_pattern: "*".into(),
                 },
-            )?;
-        Ok(response.entries.into_iter().map(|e| e.body).collect())
+            );
+            let (_, response): (_, QueryDirectoryResponse<FileIdBothDirectoryInformation>) =
+                match res {
+                    Ok(v) => v,
+                    Err(Error::NtStatus(NtStatus::NoMoreFiles)) => break,
+                    Err(e) => return Err(e),
+                };
+            output.extend(response.entries.into_iter().map(|e| e.body));
+        }
+        Ok(output)
     }
 
     pub fn write(&mut self, file_id: FileId, offset: u64, data: Vec<u8>) -> Result<u32> {
