@@ -4,7 +4,7 @@ use byteorder::{BigEndian, ReadBytesExt as _, WriteBytesExt as _};
 use cmac::Mac as _;
 use derive_more::From;
 use rand::Rng as _;
-use serde::{de::DeserializeOwned, Deserialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sha2::Digest as _;
 use smb3::*;
 use sspi::builders::EmptyInitializeSecurityContext;
@@ -595,7 +595,11 @@ impl<TransportT: Transport> Client<TransportT> {
         Ok(())
     }
 
-    pub fn rename(&mut self, file_id: FileId, path: impl AsRef<Path>) -> Result<()> {
+    pub fn set_info<Info: Serialize + HasFileInformationClass>(
+        &mut self,
+        file_id: FileId,
+        info: Info,
+    ) -> Result<()> {
         let (_, _response): (_, SetInfoResponse) = self.auth_client.request(
             Command::SetInfo,
             Some(self.tree_id),
@@ -606,10 +610,18 @@ impl<TransportT: Transport> Client<TransportT> {
                 file_info_class: FileInformationClass::FileRenameInformation,
                 additional_information: 0,
                 file_id,
-                info: FileRenameInformation {
-                    replace_if_exists: false,
-                    path: path_str(path),
-                },
+                info,
+            },
+        )?;
+        Ok(())
+    }
+
+    pub fn rename(&mut self, file_id: FileId, path: impl AsRef<Path>) -> Result<()> {
+        self.set_info(
+            file_id,
+            FileRenameInformation {
+                replace_if_exists: false,
+                path: path_str(path),
             },
         )?;
         Ok(())

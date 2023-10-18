@@ -1769,6 +1769,12 @@ pub struct FileRenameInformation {
     pub path: String,
 }
 
+impl HasFileInformationClass for FileRenameInformation {
+    fn file_information_class() -> FileInformationClass {
+        FileInformationClass::FileRenameInformation
+    }
+}
+
 #[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
 #[smb(size = 33)]
 pub struct SetInfoRequest<Info> {
