@@ -38,11 +38,12 @@ impl<'machine> Fixture<'machine> {
 
     fn run(&mut self) {
         let tests = [
-            test!(query_directory_test_small),
+            test!(delete_test),
             test!(query_directory_test_large),
+            test!(query_directory_test_small),
             test!(query_info_test),
             test!(read_write_test),
-            test!(delete_test),
+            test!(rename_test),
         ];
 
         for (test, test_name) in tests {
@@ -236,6 +237,19 @@ impl<'machine> Fixture<'machine> {
             self.client.look_up("/a_file").unwrap_err(),
             Error::NtStatus(NtStatus::ObjectNameNotFound)
         );
+    }
+
+    fn rename_test(&mut self) {
+        let file_id = self.client.create_file("/a_file").unwrap();
+        self.client.rename(file_id, "/b_file").unwrap();
+        self.client.close(file_id).unwrap();
+
+        assert_matches!(
+            self.client.look_up("/a_file").unwrap_err(),
+            Error::NtStatus(NtStatus::ObjectNameNotFound)
+        );
+        let file_id = self.client.look_up("/b_file").unwrap();
+        self.client.close(file_id).unwrap();
     }
 }
 

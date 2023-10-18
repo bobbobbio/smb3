@@ -376,7 +376,9 @@ impl<TransportT: Transport> Client<TransportT> {
             CreateRequest {
                 requested_oplock_level: OplockLevel::None,
                 impersonation_level: ImpersonationLevel::Impersonation,
-                desired_access: AccessMask::GENERIC_READ | AccessMask::FILE_READ_ATTRIBUTES,
+                desired_access: AccessMask::GENERIC_READ
+                    | AccessMask::GENERIC_WRITE
+                    | AccessMask::FILE_READ_ATTRIBUTES,
                 file_attributes: FileAttributes::empty(),
                 share_access: FileShareAccess::READ
                     | FileShareAccess::WRITE
@@ -589,6 +591,26 @@ impl<TransportT: Transport> Client<TransportT> {
             Credits(1),
             Credits(64),
             FlushRequest { file_id },
+        )?;
+        Ok(())
+    }
+
+    pub fn rename(&mut self, file_id: FileId, path: impl AsRef<Path>) -> Result<()> {
+        let (_, _response): (_, SetInfoResponse) = self.auth_client.request(
+            Command::SetInfo,
+            Some(self.tree_id),
+            Credits(1),
+            Credits(64),
+            SetInfoRequest {
+                info_type: InfoType::File,
+                file_info_class: FileInformationClass::FileRenameInformation,
+                additional_information: 0,
+                file_id,
+                info: FileRenameInformation {
+                    replace_if_exists: false,
+                    path: path_str(path),
+                },
+            },
         )?;
         Ok(())
     }

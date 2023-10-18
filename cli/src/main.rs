@@ -10,11 +10,27 @@ use std::path::PathBuf;
 
 #[derive(Subcommand)]
 enum Command {
-    ReadDir { path: PathBuf },
-    Upload { local: PathBuf, remote: PathBuf },
-    Download { remote: PathBuf, local: PathBuf },
-    QueryInfo { remote: PathBuf },
-    Delete { remote: PathBuf },
+    ReadDir {
+        path: PathBuf,
+    },
+    Upload {
+        local: PathBuf,
+        remote: PathBuf,
+    },
+    Download {
+        remote: PathBuf,
+        local: PathBuf,
+    },
+    QueryInfo {
+        remote: PathBuf,
+    },
+    Delete {
+        remote: PathBuf,
+    },
+    Rename {
+        remote_src: PathBuf,
+        remote_target: PathBuf,
+    },
 }
 
 #[derive(Parser)]
@@ -95,6 +111,13 @@ impl Cli {
         self.client.delete(remote)?;
         Ok(())
     }
+
+    fn rename(&mut self, remote_str: PathBuf, remote_target: PathBuf) -> Result<()> {
+        let file_id = self.client.look_up(remote_str)?;
+        self.client.rename(file_id, remote_target)?;
+        self.client.close(file_id)?;
+        Ok(())
+    }
 }
 
 fn main() -> Result<()> {
@@ -111,6 +134,10 @@ fn main() -> Result<()> {
         Command::Download { remote, local } => cli.download(remote, local)?,
         Command::QueryInfo { remote } => cli.query_info(remote)?,
         Command::Delete { remote } => cli.delete(remote)?,
+        Command::Rename {
+            remote_src,
+            remote_target,
+        } => cli.rename(remote_src, remote_target)?,
     }
 
     Ok(())

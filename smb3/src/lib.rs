@@ -1760,3 +1760,33 @@ pub struct FlushRequest {
 #[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
 #[smb(size = 4, insert_reserved(name = "reserved", int_type = "u16"))]
 pub struct FlushResponse;
+
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
+pub struct FileRenameInformation {
+    #[smb(insert_reserved(name = "root_directory", int_type = "u64", after = true))]
+    pub replace_if_exists: bool,
+    #[smb(collection(count(int_type = "u32", after = "root_directory", element_size = 2)))]
+    pub path: String,
+}
+
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
+#[smb(size = 33)]
+pub struct SetInfoRequest<Info> {
+    pub info_type: InfoType,
+    pub file_info_class: FileInformationClass,
+    pub additional_information: u32,
+    pub file_id: FileId,
+    #[smb(collection(
+        count(
+            int_type = "u32",
+            after = "file_info_class",
+            value = "smb_size(&self.info)"
+        ),
+        offset(int_type = "u16", after = "info_count", value = "HEADER_SIZE + 32",)
+    ))]
+    pub info: Info,
+}
+
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
+#[smb(size = 2)]
+pub struct SetInfoResponse;
