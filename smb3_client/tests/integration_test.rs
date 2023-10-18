@@ -189,6 +189,7 @@ impl<'machine> Fixture<'machine> {
         expected.basic.last_access_time = r.basic.last_access_time.clone();
         expected.basic.last_write_time = r.basic.last_write_time.clone();
         expected.basic.change_time = r.basic.change_time.clone();
+        expected.internal = r.internal.clone();
 
         assert_eq!(r, expected);
 
