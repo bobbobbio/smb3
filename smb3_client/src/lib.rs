@@ -578,7 +578,7 @@ impl<TransportT: Transport> Client<TransportT> {
             Credits(64),
             SetInfoRequest {
                 info_type: InfoType::File,
-                file_info_class: FileInformationClass::FileRenameInformation,
+                file_info_class: Info::file_information_class(),
                 additional_information: 0,
                 file_id,
                 info,
