@@ -1360,8 +1360,8 @@ pub struct FileIdBothDirectoryInformation {
     pub last_access_time: Time,
     pub last_write_time: Time,
     pub change_time: Time,
-    pub end_of_file: u64,
-    pub allocation_size: u64,
+    pub end_of_file: i64,
+    pub allocation_size: i64,
     pub file_attributes: FileAttributes,
     pub ea_size: u32,
     #[smb(insert_reserved(name = "reserved", int_type = "u32"))]
@@ -1748,7 +1748,7 @@ impl HasFileInformationClass for FileNameInformation {
 #[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
 pub struct FileStandardInformation {
     pub allocation_size: u64,
-    pub end_of_file: u64,
+    pub end_of_file: i64,
     pub number_of_links: u32,
     pub delete_pending: bool,
     #[smb(insert_reserved(name = "reserved", int_type = "u16", after = true))]
@@ -1804,7 +1804,7 @@ pub struct CloseResponse {
     pub last_write_time: Time,
     pub change_time: Time,
     pub allocation_time: u64,
-    pub end_of_file: u64,
+    pub end_of_file: i64,
     pub file_attributes: FileAttributes,
 }
 

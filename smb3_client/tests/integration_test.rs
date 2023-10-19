@@ -62,7 +62,7 @@ impl<'machine> Fixture<'machine> {
     // |_| |_|\___|_| .__/ \___|_|  |___/
     //              |_|
 
-    fn get_file_size(&mut self, path: &str) -> u64 {
+    fn get_file_size(&mut self, path: &str) -> i64 {
         let file_id = self.client.look_up(path).unwrap();
         let reply: FileStandardInformation = self.client.query_info(file_id).unwrap();
         self.client.close(file_id).unwrap();
@@ -135,7 +135,7 @@ impl<'machine> Fixture<'machine> {
             .unwrap();
         assert_eq!(read_data, test_contents);
 
-        assert_eq!(self.get_file_size("/a_file"), read_data.len() as u64);
+        assert_eq!(self.get_file_size("/a_file"), read_data.len() as i64);
 
         self.client.close(file_id).unwrap();
     }
