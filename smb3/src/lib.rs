@@ -36,6 +36,10 @@ pub enum Command {
     OplockBreak = 0x0012,
 }
 
+pub trait HasCommand {
+    fn command() -> Command;
+}
+
 #[bitfield]
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct HeaderFlags {
@@ -783,6 +787,12 @@ pub struct NegotiateRequest {
     pub negotiate_contexts: Vec<NegotiateContext>,
 }
 
+impl HasCommand for NegotiateRequest {
+    fn command() -> Command {
+        Command::Negotiate
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
 pub struct Time {
     /// The number of 100-nanosecond intervals that have elapsed since January 1st 1601
@@ -899,6 +909,12 @@ pub struct SessionSetupRequest {
     pub security_blob: Vec<u8>,
 }
 
+impl HasCommand for SessionSetupRequest {
+    fn command() -> Command {
+        Command::SessionSetup
+    }
+}
+
 bitflags! {
     #[derive(PartialEq, Eq, Copy, Clone, Debug)]
     pub struct SessionFlags: u16 {
@@ -941,6 +957,12 @@ pub struct TreeConnectRequest {
         offset(int_type = "u16", after = "flags", value = "HEADER_SIZE + 8")
     ))]
     pub path: String,
+}
+
+impl HasCommand for TreeConnectRequest {
+    fn command() -> Command {
+        Command::TreeConnect
+    }
 }
 
 #[derive(SerializeWithDiscriminant, DeserializeWithDiscriminant, Copy, Clone, Debug, PartialEq)]
@@ -1223,6 +1245,12 @@ pub struct CreateRequest {
     pub create_contexts: Vec<CreateContextEntry>,
 }
 
+impl HasCommand for CreateRequest {
+    fn command() -> Command {
+        Command::Create
+    }
+}
+
 #[derive(Serialize, Deserialize, Copy, Clone, Debug, PartialEq)]
 pub struct FileId {
     pub persistent: u64,
@@ -1290,6 +1318,12 @@ pub struct QueryDirectoryRequest {
         offset(int_type = "u16", after = "file_id", value = "HEADER_SIZE + 32")
     ))]
     pub search_pattern: String,
+}
+
+impl HasCommand for QueryDirectoryRequest {
+    fn command() -> Command {
+        Command::QueryDirectory
+    }
 }
 
 #[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
@@ -1380,6 +1414,12 @@ pub struct WriteRequest {
     pub channel_data: Vec<u8>,
 }
 
+impl HasCommand for WriteRequest {
+    fn command() -> Command {
+        Command::Write
+    }
+}
+
 #[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
 #[smb(size = 17)]
 pub struct WriteResponse {
@@ -1422,6 +1462,12 @@ pub struct ReadRequest {
         )
     ))]
     pub channel_data: Vec<u8>,
+}
+
+impl HasCommand for ReadRequest {
+    fn command() -> Command {
+        Command::Read
+    }
 }
 
 #[derive(SerializeWithDiscriminant, DeserializeWithDiscriminant, Copy, Clone, Debug, PartialEq)]
@@ -1534,6 +1580,12 @@ pub struct QueryInfoRequest {
         )
     ))]
     pub buffer: Vec<u8>,
+}
+
+impl HasCommand for QueryInfoRequest {
+    fn command() -> Command {
+        Command::QueryInfo
+    }
 }
 
 pub trait HasFileInformationClass {
@@ -1736,6 +1788,12 @@ pub struct CloseRequest {
     pub file_id: FileId,
 }
 
+impl HasCommand for CloseRequest {
+    fn command() -> Command {
+        Command::Close
+    }
+}
+
 #[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
 #[smb(size = 60)]
 pub struct CloseResponse {
@@ -1755,6 +1813,12 @@ pub struct CloseResponse {
 pub struct FlushRequest {
     #[smb(insert_reserved(name = "reserved", int_type = "u32"))]
     pub file_id: FileId,
+}
+
+impl HasCommand for FlushRequest {
+    fn command() -> Command {
+        Command::Flush
+    }
 }
 
 #[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
@@ -1791,6 +1855,12 @@ pub struct SetInfoRequest<Info> {
         offset(int_type = "u16", after = "info_count", value = "HEADER_SIZE + 32",)
     ))]
     pub info: Info,
+}
+
+impl<Info> HasCommand for SetInfoRequest<Info> {
+    fn command() -> Command {
+        Command::SetInfo
+    }
 }
 
 #[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]

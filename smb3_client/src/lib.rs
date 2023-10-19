@@ -51,9 +51,8 @@ impl<TransportT: Transport> UnauthenticatedClient<TransportT> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn request<T: serde::Serialize, R: serde::de::DeserializeOwned>(
+    fn request<T: serde::Serialize + HasCommand, R: serde::de::DeserializeOwned>(
         &mut self,
-        command: Command,
         credit_charge: Credits,
         credits_requested: Credits,
         session_id: Option<SessionId>,
@@ -61,6 +60,7 @@ impl<TransportT: Transport> UnauthenticatedClient<TransportT> {
         tree_id: Option<TreeId>,
         request: T,
     ) -> Result<(ResponseHeader, R)> {
+        let command = T::command();
         let header = RequestHeader {
             protocol_id: ProtocolId::new(),
             header_length: 64,
@@ -143,15 +143,8 @@ impl<TransportT: Transport> UnauthenticatedClient<TransportT> {
             )],
         };
 
-        let _response: (_, NegotiateResponse) = self.request(
-            Command::Negotiate,
-            Credits(0),
-            Credits(10),
-            None,
-            None,
-            None,
-            request,
-        )?;
+        let _response: (_, NegotiateResponse) =
+            self.request(Credits(0), Credits(10), None, None, None, request)?;
         Ok(())
     }
 }
@@ -205,16 +198,8 @@ impl<TransportT: Transport> AuthenticatedClient<TransportT> {
             security_blob,
         };
 
-        let (mut resp_header, mut response): (ResponseHeader, SessionSetupResponse) = unauth_client
-            .request(
-                Command::SessionSetup,
-                Credits(0),
-                Credits(130),
-                None,
-                None,
-                None,
-                request.clone(),
-            )?;
+        let (mut resp_header, mut response): (ResponseHeader, SessionSetupResponse) =
+            unauth_client.request(Credits(0), Credits(130), None, None, None, request.clone())?;
 
         let session_id = resp_header.session_id;
 
@@ -251,7 +236,6 @@ impl<TransportT: Transport> AuthenticatedClient<TransportT> {
             request.security_blob = output_buffer.pop().unwrap().buffer;
 
             (resp_header, response) = unauth_client.request(
-                Command::SessionSetup,
                 Credits(0),
                 Credits(130),
                 Some(session_id),
@@ -277,9 +261,8 @@ impl<TransportT: Transport> AuthenticatedClient<TransportT> {
         })
     }
 
-    fn request<T: serde::Serialize, R: serde::de::DeserializeOwned>(
+    fn request<T: serde::Serialize + HasCommand, R: serde::de::DeserializeOwned>(
         &mut self,
-        command: Command,
         tree_id: Option<TreeId>,
         credit_charge: Credits,
         credits_requested: Credits,
@@ -291,7 +274,6 @@ impl<TransportT: Transport> AuthenticatedClient<TransportT> {
             Ok(Signature(mac.finalize().into_bytes().into()))
         };
         self.unauth_client.request(
-            command,
             credit_charge,
             credits_requested,
             Some(self.session_id),
@@ -303,7 +285,6 @@ impl<TransportT: Transport> AuthenticatedClient<TransportT> {
 
     fn tree_connect(&mut self, path: &str) -> Result<TreeId> {
         let (header, _): (_, TreeConnectResponse) = self.request(
-            Command::TreeConnect,
             None,
             Credits(1),
             Credits(64),
@@ -369,7 +350,6 @@ impl<TransportT: Transport> Client<TransportT> {
 
     pub fn look_up(&mut self, path: impl AsRef<Path>) -> Result<FileId> {
         let (_, response): (_, CreateResponse) = self.auth_client.request(
-            Command::Create,
             Some(self.tree_id),
             Credits(1),
             Credits(64),
@@ -394,7 +374,6 @@ impl<TransportT: Transport> Client<TransportT> {
 
     pub fn create_file(&mut self, path: impl AsRef<Path>) -> Result<FileId> {
         let (_, response): (_, CreateResponse) = self.auth_client.request(
-            Command::Create,
             Some(self.tree_id),
             Credits(1),
             Credits(64),
@@ -417,7 +396,6 @@ impl<TransportT: Transport> Client<TransportT> {
 
     pub fn delete(&mut self, path: impl AsRef<Path>) -> Result<()> {
         let (_, response): (_, CreateResponse) = self.auth_client.request(
-            Command::Create,
             Some(self.tree_id),
             Credits(1),
             Credits(64),
@@ -447,7 +425,6 @@ impl<TransportT: Transport> Client<TransportT> {
 
         loop {
             let res = self.auth_client.request(
-                Command::QueryDirectory,
                 Some(self.tree_id),
                 Credits(1),
                 Credits(64),
@@ -473,7 +450,6 @@ impl<TransportT: Transport> Client<TransportT> {
 
     pub fn write(&mut self, file_id: FileId, offset: u64, data: Vec<u8>) -> Result<u32> {
         let (_, response): (_, WriteResponse) = self.auth_client.request(
-            Command::Write,
             Some(self.tree_id),
             Credits(1),
             Credits(64),
@@ -513,7 +489,6 @@ impl<TransportT: Transport> Client<TransportT> {
 
     pub fn read(&mut self, file_id: FileId, offset: u64, count: u32) -> Result<Vec<u8>> {
         let (_, response): (_, ReadResponse) = self.auth_client.request(
-            Command::Read,
             Some(self.tree_id),
             Credits(1),
             Credits(9),
@@ -553,7 +528,6 @@ impl<TransportT: Transport> Client<TransportT> {
         file_id: FileId,
     ) -> Result<Info> {
         let (_, response): (_, QueryInfoResponse<Info>) = self.auth_client.request(
-            Command::QueryInfo,
             Some(self.tree_id),
             Credits(1),
             Credits(64),
@@ -572,7 +546,6 @@ impl<TransportT: Transport> Client<TransportT> {
 
     pub fn close(&mut self, file_id: FileId) -> Result<CloseResponse> {
         let (_, response): (_, CloseResponse) = self.auth_client.request(
-            Command::Close,
             Some(self.tree_id),
             Credits(1),
             Credits(64),
@@ -586,7 +559,6 @@ impl<TransportT: Transport> Client<TransportT> {
 
     pub fn flush(&mut self, file_id: FileId) -> Result<()> {
         let (_, _response): (_, FlushResponse) = self.auth_client.request(
-            Command::Flush,
             Some(self.tree_id),
             Credits(1),
             Credits(64),
@@ -601,7 +573,6 @@ impl<TransportT: Transport> Client<TransportT> {
         info: Info,
     ) -> Result<()> {
         let (_, _response): (_, SetInfoResponse) = self.auth_client.request(
-            Command::SetInfo,
             Some(self.tree_id),
             Credits(1),
             Credits(64),
