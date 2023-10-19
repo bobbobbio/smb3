@@ -597,4 +597,9 @@ impl<TransportT: Transport> Client<TransportT> {
         )?;
         Ok(())
     }
+
+    pub fn resize(&mut self, file_id: FileId, size: i64) -> Result<()> {
+        self.set_info(file_id, FileEndOfFileInformation { end_of_file: size })?;
+        Ok(())
+    }
 }

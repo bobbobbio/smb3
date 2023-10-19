@@ -4,9 +4,10 @@ use assert_matches::assert_matches;
 use serde::de::DeserializeOwned;
 use smb3::{
     AccessMask, FileAccessInformation, FileAlignmentInformation, FileAlignmentRequirement,
-    FileAllInformation, FileAttributes, FileBasicInformation, FileEaInformation, FileId,
-    FileInternalInformation, FileMode, FileModeInformation, FileNameInformation,
-    FilePositionInformation, FileStandardInformation, HasFileInformationClass, NtStatus, Time,
+    FileAllInformation, FileAttributes, FileBasicInformation, FileEaInformation,
+    FileEndOfFileInformation, FileId, FileInternalInformation, FileMode, FileModeInformation,
+    FileNameInformation, FilePositionInformation, FileStandardInformation, HasFileInformationClass,
+    NtStatus, Time,
 };
 use smb3_client::{Client, Error, PORT};
 use std::collections::BTreeSet;
@@ -44,6 +45,7 @@ impl<'machine> Fixture<'machine> {
             test!(query_info_test),
             test!(read_write_test),
             test!(rename_test),
+            test!(resize_test),
         ];
 
         for (test, test_name) in tests {
@@ -250,6 +252,14 @@ impl<'machine> Fixture<'machine> {
             Error::NtStatus(NtStatus::ObjectNameNotFound)
         );
         let file_id = self.client.look_up("/b_file").unwrap();
+        self.client.close(file_id).unwrap();
+    }
+
+    fn resize_test(&mut self) {
+        let file_id = self.client.create_file("/a_file").unwrap();
+        self.client.resize(file_id, 10000).unwrap();
+        let info: FileEndOfFileInformation = self.client.query_info(file_id).unwrap();
+        assert_eq!(info.end_of_file, 10000);
         self.client.close(file_id).unwrap();
     }
 }

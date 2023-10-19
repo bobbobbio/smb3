@@ -1276,8 +1276,8 @@ pub struct CreateResponse {
     pub last_access_time: Time,
     pub last_write_time: Time,
     pub change_time: Time,
-    pub allocation_size: u64,
-    pub end_of_file: u64,
+    pub allocation_size: i64,
+    pub end_of_file: i64,
     pub file_attributes: FileAttributes,
     #[smb(insert_reserved(name = "reserved", int_type = "u32"))]
     pub file_id: FileId,
@@ -1866,3 +1866,14 @@ impl<Info> HasCommand for SetInfoRequest<Info> {
 #[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
 #[smb(size = 2)]
 pub struct SetInfoResponse;
+
+#[derive(SerializeSmbStruct, DeserializeSmbStruct, Clone, Debug, PartialEq)]
+pub struct FileEndOfFileInformation {
+    pub end_of_file: i64,
+}
+
+impl HasFileInformationClass for FileEndOfFileInformation {
+    fn file_information_class() -> FileInformationClass {
+        FileInformationClass::FileEndOfFileInformation
+    }
+}
