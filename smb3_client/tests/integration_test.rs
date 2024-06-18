@@ -11,11 +11,17 @@ use smb3::{
 };
 use smb3_client::{Client, Error, PORT};
 use std::collections::BTreeSet;
-use std::net::TcpStream;
+use tokio::net::TcpStream;
 
 macro_rules! test {
-    ($test_name:ident) => {
-        (Self::$test_name as fn(&mut Self), stringify!($test_name))
+    ($self:expr, $test_name:ident) => {
+        log::info!(
+            "running test {}:Fixture::{}",
+            file!(),
+            stringify!($test_name)
+        );
+        $self.$test_name().await;
+        $self.machine.run_command("rm -rf /files/*");
     };
 }
 
@@ -25,34 +31,26 @@ struct Fixture<'machine> {
 }
 
 impl<'machine> Fixture<'machine> {
-    fn new(machine: &'machine mut vm_runner::Machine) -> Self {
+    async fn new(machine: &'machine mut vm_runner::Machine) -> Self {
         let port = machine
             .forwarded_ports()
             .iter()
             .find(|p| p.guest == PORT)
             .unwrap();
-        let transport = TcpStream::connect(("127.0.0.1", port.host)).unwrap();
-        let client = Client::new(transport, "root", "a", "files").unwrap();
+        let transport = TcpStream::connect(("127.0.0.1", port.host)).await.unwrap();
+        let client = Client::new(transport, "root", "a", "files").await.unwrap();
 
         Self { machine, client }
     }
 
-    fn run(&mut self) {
-        let tests = [
-            test!(delete_test),
-            test!(query_directory_test_large),
-            test!(query_directory_test_small),
-            test!(query_info_test),
-            test!(read_write_test),
-            test!(rename_test),
-            test!(resize_test),
-        ];
-
-        for (test, test_name) in tests {
-            log::info!("running test {}:Fixture::{}", file!(), test_name);
-            test(self);
-            self.machine.run_command("rm -rf /files/*");
-        }
+    async fn run(&mut self) {
+        test!(self, delete_test);
+        test!(self, query_directory_test_large);
+        test!(self, query_directory_test_small);
+        test!(self, query_info_test);
+        test!(self, read_write_test);
+        test!(self, rename_test);
+        test!(self, resize_test);
     }
 
     //  _          _
@@ -62,18 +60,18 @@ impl<'machine> Fixture<'machine> {
     // |_| |_|\___|_| .__/ \___|_|  |___/
     //              |_|
 
-    fn get_file_size(&mut self, path: &str) -> i64 {
-        let file_id = self.client.look_up(path).unwrap();
-        let reply: FileStandardInformation = self.client.query_info(file_id).unwrap();
-        self.client.close(file_id).unwrap();
+    async fn get_file_size(&mut self, path: &str) -> i64 {
+        let file_id = self.client.look_up(path).await.unwrap();
+        let reply: FileStandardInformation = self.client.query_info(file_id).await.unwrap();
+        self.client.close(file_id).await.unwrap();
         reply.end_of_file
     }
 
-    fn query_info<Info: DeserializeOwned + HasFileInformationClass>(
+    async fn query_info<Info: DeserializeOwned + HasFileInformationClass>(
         &mut self,
         file_id: FileId,
     ) -> Info {
-        self.client.query_info::<Info>(file_id).unwrap()
+        self.client.query_info::<Info>(file_id).await.unwrap()
     }
 
     //  _            _
@@ -83,7 +81,7 @@ impl<'machine> Fixture<'machine> {
     //  \__\___||___/\__|___/
     //
 
-    fn query_directory_test_with_dir_size(&mut self, size: usize) {
+    async fn query_directory_test_with_dir_size(&mut self, size: usize) {
         // Create entries with pretty large names, this helps us ensure some pagination
         let entries_to_create: Vec<_> = (0..size)
             .map(|n| {
@@ -94,12 +92,12 @@ impl<'machine> Fixture<'machine> {
             })
             .collect();
         for f in &entries_to_create {
-            let file_id = self.client.create_file(format!("/{f}")).unwrap();
-            self.client.close(file_id).unwrap();
+            let file_id = self.client.create_file(format!("/{f}")).await.unwrap();
+            self.client.close(file_id).await.unwrap();
         }
 
-        let root = self.client.look_up("/").unwrap();
-        let entries_vec = self.client.query_directory(root).unwrap();
+        let root = self.client.look_up("/").await.unwrap();
+        let entries_vec = self.client.query_directory(root).await.unwrap();
         let entries: BTreeSet<_> = entries_vec.into_iter().map(|e| e.file_name).collect();
         let expected_entires = BTreeSet::from_iter(
             [".".into(), "..".into()]
@@ -108,39 +106,41 @@ impl<'machine> Fixture<'machine> {
         );
         assert_eq!(entries.len(), expected_entires.len());
         assert_eq!(entries, expected_entires);
-        self.client.close(root).unwrap();
+        self.client.close(root).await.unwrap();
     }
 
-    fn query_directory_test_small(&mut self) {
-        self.query_directory_test_with_dir_size(5);
+    async fn query_directory_test_small(&mut self) {
+        self.query_directory_test_with_dir_size(5).await;
     }
 
-    fn query_directory_test_large(&mut self) {
-        self.query_directory_test_with_dir_size(60);
+    async fn query_directory_test_large(&mut self) {
+        self.query_directory_test_with_dir_size(60).await;
     }
 
-    fn read_write_test(&mut self) {
-        let file_id = self.client.create_file("/a_file").unwrap();
+    async fn read_write_test(&mut self) {
+        let file_id = self.client.create_file("/a_file").await.unwrap();
 
         let test_contents: Vec<u8> = (0..100_000).map(|v| (v % 255) as u8).collect();
         self.client
             .write_all(file_id.clone(), &test_contents[..])
+            .await
             .unwrap();
-        self.client.flush(file_id).unwrap();
+        self.client.flush(file_id).await.unwrap();
 
-        let file_id = self.client.look_up("/a_file").unwrap();
+        let file_id = self.client.look_up("/a_file").await.unwrap();
         let mut read_data = vec![];
         self.client
             .read_all(file_id.clone(), &mut read_data)
+            .await
             .unwrap();
         assert_eq!(read_data, test_contents);
 
-        assert_eq!(self.get_file_size("/a_file"), read_data.len() as i64);
+        assert_eq!(self.get_file_size("/a_file").await, read_data.len() as i64);
 
-        self.client.close(file_id).unwrap();
+        self.client.close(file_id).await.unwrap();
     }
 
-    fn query_info_test(&mut self) {
+    async fn query_info_test(&mut self) {
         let mut expected = FileAllInformation {
             basic: FileBasicInformation {
                 creation_time: Time { intervals: 0 },
@@ -183,8 +183,8 @@ impl<'machine> Fixture<'machine> {
             },
         };
 
-        let file_id = self.client.create_file("/a_file").unwrap();
-        let r: FileAllInformation = self.client.query_info(file_id).unwrap();
+        let file_id = self.client.create_file("/a_file").await.unwrap();
+        let r: FileAllInformation = self.client.query_info(file_id).await.unwrap();
 
         // This are unpredictable
         expected.basic.creation_time = r.basic.creation_time.clone();
@@ -196,78 +196,84 @@ impl<'machine> Fixture<'machine> {
         assert_eq!(r, expected);
 
         assert_eq!(
-            self.query_info::<FileBasicInformation>(file_id),
+            self.query_info::<FileBasicInformation>(file_id).await,
             expected.basic
         );
         assert_eq!(
-            self.query_info::<FileStandardInformation>(file_id),
+            self.query_info::<FileStandardInformation>(file_id).await,
             expected.standard
         );
         assert_eq!(
-            self.query_info::<FileInternalInformation>(file_id),
+            self.query_info::<FileInternalInformation>(file_id).await,
             expected.internal
         );
-        assert_eq!(self.query_info::<FileEaInformation>(file_id), expected.ea);
         assert_eq!(
-            self.query_info::<FileAccessInformation>(file_id),
+            self.query_info::<FileEaInformation>(file_id).await,
+            expected.ea
+        );
+        assert_eq!(
+            self.query_info::<FileAccessInformation>(file_id).await,
             expected.access
         );
         assert_eq!(
-            self.query_info::<FilePositionInformation>(file_id),
+            self.query_info::<FilePositionInformation>(file_id).await,
             expected.position
         );
         assert_eq!(
-            self.query_info::<FileModeInformation>(file_id),
+            self.query_info::<FileModeInformation>(file_id).await,
             expected.mode
         );
         assert_eq!(
-            self.query_info::<FileAlignmentInformation>(file_id),
+            self.query_info::<FileAlignmentInformation>(file_id).await,
             expected.alignment
         );
         assert_eq!(
-            self.query_info::<FileNameInformation>(file_id),
+            self.query_info::<FileNameInformation>(file_id).await,
             expected.name
         );
 
-        self.client.close(file_id).unwrap();
+        self.client.close(file_id).await.unwrap();
     }
 
-    fn delete_test(&mut self) {
-        let file_id = self.client.create_file("/a_file").unwrap();
-        self.client.close(file_id).unwrap();
-        self.client.delete("/a_file").unwrap();
+    async fn delete_test(&mut self) {
+        let file_id = self.client.create_file("/a_file").await.unwrap();
+        self.client.close(file_id).await.unwrap();
+        self.client.delete("/a_file").await.unwrap();
         assert_matches!(
-            self.client.look_up("/a_file").unwrap_err(),
+            self.client.look_up("/a_file").await.unwrap_err(),
             Error::NtStatus(NtStatus::ObjectNameNotFound)
         );
     }
 
-    fn rename_test(&mut self) {
-        let file_id = self.client.create_file("/a_file").unwrap();
-        self.client.rename(file_id, "/b_file").unwrap();
-        self.client.close(file_id).unwrap();
+    async fn rename_test(&mut self) {
+        let file_id = self.client.create_file("/a_file").await.unwrap();
+        self.client.rename(file_id, "/b_file").await.unwrap();
+        self.client.close(file_id).await.unwrap();
 
         assert_matches!(
-            self.client.look_up("/a_file").unwrap_err(),
+            self.client.look_up("/a_file").await.unwrap_err(),
             Error::NtStatus(NtStatus::ObjectNameNotFound)
         );
-        let file_id = self.client.look_up("/b_file").unwrap();
-        self.client.close(file_id).unwrap();
+        let file_id = self.client.look_up("/b_file").await.unwrap();
+        self.client.close(file_id).await.unwrap();
     }
 
-    fn resize_test(&mut self) {
-        let file_id = self.client.create_file("/a_file").unwrap();
-        self.client.resize(file_id, 10000).unwrap();
-        let info: FileEndOfFileInformation = self.client.query_info(file_id).unwrap();
+    async fn resize_test(&mut self) {
+        let file_id = self.client.create_file("/a_file").await.unwrap();
+        self.client.resize(file_id, 10000).await.unwrap();
+        let info: FileEndOfFileInformation = self.client.query_info(file_id).await.unwrap();
         assert_eq!(info.end_of_file, 10000);
-        self.client.close(file_id).unwrap();
+        self.client.close(file_id).await.unwrap();
     }
+}
+
+#[tokio::main]
+async fn run_fixture(m: &mut vm_runner::Machine) {
+    let mut fix = Fixture::new(m).await;
+    fix.run().await;
 }
 
 #[test]
 fn linux_server() {
-    vm_test_fixture::fixture(&[PORT], |m| {
-        let mut fix = Fixture::new(m);
-        fix.run();
-    });
+    vm_test_fixture::fixture(&[PORT], |m| run_fixture(m));
 }

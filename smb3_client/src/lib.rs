@@ -1,6 +1,5 @@
 use sspi_bobbobbio as sspi;
 
-use byteorder::{BigEndian, ReadBytesExt as _, WriteBytesExt as _};
 use cmac::Mac as _;
 use derive_more::From;
 use rand::Rng as _;
@@ -12,8 +11,9 @@ use sspi::{
     AuthIdentity, ClientRequestFlags, CredentialUse, DataRepresentation, Ntlm, SecurityBuffer,
     SecurityBufferType, SecurityStatus, Sspi, SspiImpl,
 };
+use std::mem;
 use std::path::{Component, Path};
-use std::{io, mem};
+use tokio::io::{self, AsyncReadExt as _, AsyncWriteExt as _};
 
 pub const PORT: u16 = 445;
 
@@ -26,12 +26,12 @@ pub enum Error {
     NtStatus(NtStatus),
     Sspi(sspi::Error),
     Seralization(serde_smb::Error),
-    Io(io::Error),
+    Io(std::io::Error),
 }
 
-pub trait Transport: io::Read + io::Write {}
+pub trait Transport: io::AsyncRead + io::AsyncWrite + Unpin {}
 
-impl<T> Transport for T where T: io::Read + io::Write {}
+impl<T> Transport for T where T: io::AsyncRead + io::AsyncWrite + Unpin {}
 
 struct UnauthenticatedClient<TransportT> {
     next_message_id: MessageId,
@@ -51,7 +51,7 @@ impl<TransportT: Transport> UnauthenticatedClient<TransportT> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn request<T: serde::Serialize + HasCommand, R: serde::de::DeserializeOwned>(
+    async fn request<T: serde::Serialize + HasCommand, R: serde::de::DeserializeOwned>(
         &mut self,
         credit_charge: Credits,
         credits_requested: Credits,
@@ -90,16 +90,15 @@ impl<TransportT: Transport> UnauthenticatedClient<TransportT> {
             self.pre_auth_hash = hasher.finalize().to_vec();
         }
 
-        self.transport
-            .write_u32::<BigEndian>(req_bytes.len() as u32)?;
-        self.transport.write_all(&req_bytes)?;
+        self.transport.write_u32(req_bytes.len() as u32).await?;
+        self.transport.write_all(&req_bytes).await?;
 
         let mut response_header: ResponseHeader;
         let mut response_bytes: Vec<u8>;
         let mut deser = loop {
-            let len = self.transport.read_u32::<BigEndian>()?;
+            let len = self.transport.read_u32().await?;
             response_bytes = vec![0; len as usize];
-            self.transport.read_exact(&mut response_bytes)?;
+            self.transport.read_exact(&mut response_bytes).await?;
 
             let mut deser = serde_smb::Deserializer::new(&response_bytes[..]);
             response_header = Deserialize::deserialize(&mut deser)?;
@@ -126,7 +125,7 @@ impl<TransportT: Transport> UnauthenticatedClient<TransportT> {
         }
     }
 
-    fn negotiate(&mut self) -> Result<()> {
+    async fn negotiate(&mut self) -> Result<()> {
         let mut rng = rand::thread_rng();
         let pre_auth_salt = rng.gen::<[u8; 32]>().to_vec();
         let request = NegotiateRequest {
@@ -143,8 +142,9 @@ impl<TransportT: Transport> UnauthenticatedClient<TransportT> {
             )],
         };
 
-        let _response: (_, NegotiateResponse) =
-            self.request(Credits(0), Credits(10), None, None, None, request)?;
+        let _response: (_, NegotiateResponse) = self
+            .request(Credits(0), Credits(10), None, None, None, request)
+            .await?;
         Ok(())
     }
 }
@@ -156,10 +156,10 @@ struct AuthenticatedClient<TransportT> {
 }
 
 impl<TransportT: Transport> AuthenticatedClient<TransportT> {
-    fn new(transport: TransportT, username: &str, password: &str) -> Result<Self> {
+    async fn new(transport: TransportT, username: &str, password: &str) -> Result<Self> {
         let mut unauth_client = UnauthenticatedClient::new(transport);
 
-        unauth_client.negotiate()?;
+        unauth_client.negotiate().await?;
 
         let mut ntlm = Ntlm::new();
 
@@ -198,8 +198,9 @@ impl<TransportT: Transport> AuthenticatedClient<TransportT> {
             security_blob,
         };
 
-        let (mut resp_header, mut response): (ResponseHeader, SessionSetupResponse) =
-            unauth_client.request(Credits(0), Credits(130), None, None, None, request.clone())?;
+        let (mut resp_header, mut response): (ResponseHeader, SessionSetupResponse) = unauth_client
+            .request(Credits(0), Credits(130), None, None, None, request.clone())
+            .await?;
 
         let session_id = resp_header.session_id;
 
@@ -235,14 +236,16 @@ impl<TransportT: Transport> AuthenticatedClient<TransportT> {
 
             request.security_blob = output_buffer.pop().unwrap().buffer;
 
-            (resp_header, response) = unauth_client.request(
-                Credits(0),
-                Credits(130),
-                Some(session_id),
-                None,
-                None,
-                request.clone(),
-            )?;
+            (resp_header, response) = unauth_client
+                .request(
+                    Credits(0),
+                    Credits(130),
+                    Some(session_id),
+                    None,
+                    None,
+                    request.clone(),
+                )
+                .await?;
         }
 
         let session_key = ntlm.session_key().unwrap();
@@ -261,7 +264,7 @@ impl<TransportT: Transport> AuthenticatedClient<TransportT> {
         })
     }
 
-    fn request<T: serde::Serialize + HasCommand, R: serde::de::DeserializeOwned>(
+    async fn request<T: serde::Serialize + HasCommand, R: serde::de::DeserializeOwned>(
         &mut self,
         tree_id: Option<TreeId>,
         credit_charge: Credits,
@@ -273,26 +276,30 @@ impl<TransportT: Transport> AuthenticatedClient<TransportT> {
             mac.update(bytes);
             Ok(Signature(mac.finalize().into_bytes().into()))
         };
-        self.unauth_client.request(
-            credit_charge,
-            credits_requested,
-            Some(self.session_id),
-            Some(&mut sig_func),
-            tree_id,
-            request,
-        )
+        self.unauth_client
+            .request(
+                credit_charge,
+                credits_requested,
+                Some(self.session_id),
+                Some(&mut sig_func),
+                tree_id,
+                request,
+            )
+            .await
     }
 
-    fn tree_connect(&mut self, path: &str) -> Result<TreeId> {
-        let (header, _): (_, TreeConnectResponse) = self.request(
-            None,
-            Credits(1),
-            Credits(64),
-            TreeConnectRequest {
-                flags: TreeConnectFlags::empty(),
-                path: path.into(),
-            },
-        )?;
+    async fn tree_connect(&mut self, path: &str) -> Result<TreeId> {
+        let (header, _): (_, TreeConnectResponse) = self
+            .request(
+                None,
+                Credits(1),
+                Credits(64),
+                TreeConnectRequest {
+                    flags: TreeConnectFlags::empty(),
+                    path: path.into(),
+                },
+            )
+            .await?;
 
         Ok(header.tree_id)
     }
@@ -339,104 +346,122 @@ pub struct Client<TransportT> {
 }
 
 impl<TransportT: Transport> Client<TransportT> {
-    pub fn new(transport: TransportT, username: &str, password: &str, path: &str) -> Result<Self> {
-        let mut auth_client = AuthenticatedClient::new(transport, username, password)?;
-        let tree_id = auth_client.tree_connect(path)?;
+    pub async fn new(
+        transport: TransportT,
+        username: &str,
+        password: &str,
+        path: &str,
+    ) -> Result<Self> {
+        let mut auth_client = AuthenticatedClient::new(transport, username, password).await?;
+        let tree_id = auth_client.tree_connect(path).await?;
         Ok(Self {
             auth_client,
             tree_id,
         })
     }
 
-    pub fn look_up(&mut self, path: impl AsRef<Path>) -> Result<FileId> {
-        let (_, response): (_, CreateResponse) = self.auth_client.request(
-            Some(self.tree_id),
-            Credits(1),
-            Credits(64),
-            CreateRequest {
-                requested_oplock_level: OplockLevel::None,
-                impersonation_level: ImpersonationLevel::Impersonation,
-                desired_access: AccessMask::GENERIC_READ
-                    | AccessMask::GENERIC_WRITE
-                    | AccessMask::FILE_READ_ATTRIBUTES,
-                file_attributes: FileAttributes::empty(),
-                share_access: FileShareAccess::READ
-                    | FileShareAccess::WRITE
-                    | FileShareAccess::DELETE,
-                create_disposition: FileCreateDisposition::Open,
-                create_options: FileCreateOptions::empty(),
-                name: path_str(path),
-                create_contexts: vec![],
-            },
-        )?;
+    pub async fn look_up(&mut self, path: impl AsRef<Path>) -> Result<FileId> {
+        let (_, response): (_, CreateResponse) = self
+            .auth_client
+            .request(
+                Some(self.tree_id),
+                Credits(1),
+                Credits(64),
+                CreateRequest {
+                    requested_oplock_level: OplockLevel::None,
+                    impersonation_level: ImpersonationLevel::Impersonation,
+                    desired_access: AccessMask::GENERIC_READ
+                        | AccessMask::GENERIC_WRITE
+                        | AccessMask::FILE_READ_ATTRIBUTES,
+                    file_attributes: FileAttributes::empty(),
+                    share_access: FileShareAccess::READ
+                        | FileShareAccess::WRITE
+                        | FileShareAccess::DELETE,
+                    create_disposition: FileCreateDisposition::Open,
+                    create_options: FileCreateOptions::empty(),
+                    name: path_str(path),
+                    create_contexts: vec![],
+                },
+            )
+            .await?;
         Ok(response.file_id)
     }
 
-    pub fn create_file(&mut self, path: impl AsRef<Path>) -> Result<FileId> {
-        let (_, response): (_, CreateResponse) = self.auth_client.request(
-            Some(self.tree_id),
-            Credits(1),
-            Credits(64),
-            CreateRequest {
-                requested_oplock_level: OplockLevel::None,
-                impersonation_level: ImpersonationLevel::Impersonation,
-                desired_access: AccessMask::GENERIC_WRITE | AccessMask::FILE_READ_ATTRIBUTES,
-                file_attributes: FileAttributes::empty(),
-                share_access: FileShareAccess::READ
-                    | FileShareAccess::WRITE
-                    | FileShareAccess::DELETE,
-                create_disposition: FileCreateDisposition::Create,
-                create_options: FileCreateOptions::NON_DIRECTORY_FILE,
-                name: path_str(path),
-                create_contexts: vec![],
-            },
-        )?;
+    pub async fn create_file(&mut self, path: impl AsRef<Path>) -> Result<FileId> {
+        let (_, response): (_, CreateResponse) = self
+            .auth_client
+            .request(
+                Some(self.tree_id),
+                Credits(1),
+                Credits(64),
+                CreateRequest {
+                    requested_oplock_level: OplockLevel::None,
+                    impersonation_level: ImpersonationLevel::Impersonation,
+                    desired_access: AccessMask::GENERIC_WRITE | AccessMask::FILE_READ_ATTRIBUTES,
+                    file_attributes: FileAttributes::empty(),
+                    share_access: FileShareAccess::READ
+                        | FileShareAccess::WRITE
+                        | FileShareAccess::DELETE,
+                    create_disposition: FileCreateDisposition::Create,
+                    create_options: FileCreateOptions::NON_DIRECTORY_FILE,
+                    name: path_str(path),
+                    create_contexts: vec![],
+                },
+            )
+            .await?;
         Ok(response.file_id)
     }
 
-    pub fn delete(&mut self, path: impl AsRef<Path>) -> Result<()> {
-        let (_, response): (_, CreateResponse) = self.auth_client.request(
-            Some(self.tree_id),
-            Credits(1),
-            Credits(64),
-            CreateRequest {
-                requested_oplock_level: OplockLevel::None,
-                impersonation_level: ImpersonationLevel::Impersonation,
-                desired_access: AccessMask::DELETE,
-                file_attributes: FileAttributes::empty(),
-                share_access: FileShareAccess::READ
-                    | FileShareAccess::WRITE
-                    | FileShareAccess::DELETE,
-                create_disposition: FileCreateDisposition::Open,
-                create_options: FileCreateOptions::DELETE_ON_CLOSE,
-                name: path_str(path),
-                create_contexts: vec![],
-            },
-        )?;
-        self.close(response.file_id)?;
+    pub async fn delete(&mut self, path: impl AsRef<Path>) -> Result<()> {
+        let (_, response): (_, CreateResponse) = self
+            .auth_client
+            .request(
+                Some(self.tree_id),
+                Credits(1),
+                Credits(64),
+                CreateRequest {
+                    requested_oplock_level: OplockLevel::None,
+                    impersonation_level: ImpersonationLevel::Impersonation,
+                    desired_access: AccessMask::DELETE,
+                    file_attributes: FileAttributes::empty(),
+                    share_access: FileShareAccess::READ
+                        | FileShareAccess::WRITE
+                        | FileShareAccess::DELETE,
+                    create_disposition: FileCreateDisposition::Open,
+                    create_options: FileCreateOptions::DELETE_ON_CLOSE,
+                    name: path_str(path),
+                    create_contexts: vec![],
+                },
+            )
+            .await?;
+        self.close(response.file_id).await?;
         Ok(())
     }
 
-    pub fn query_directory(
+    pub async fn query_directory(
         &mut self,
         file_id: FileId,
     ) -> Result<Vec<FileIdBothDirectoryInformation>> {
         let mut output = vec![];
 
         loop {
-            let res = self.auth_client.request(
-                Some(self.tree_id),
-                Credits(1),
-                Credits(64),
-                QueryDirectoryRequest {
-                    file_information_class: FileInformationClass::FileIdFullDirectoryInformation,
-                    flags: QueryDirectoryFlags::empty(),
-                    file_index: 0,
-                    file_id,
-                    output_buffer_length: 15380,
-                    search_pattern: "*".into(),
-                },
-            );
+            let res = self
+                .auth_client
+                .request(
+                    Some(self.tree_id),
+                    Credits(1),
+                    Credits(64),
+                    QueryDirectoryRequest {
+                        file_information_class:
+                            FileInformationClass::FileIdFullDirectoryInformation,
+                        flags: QueryDirectoryFlags::empty(),
+                        file_index: 0,
+                        file_id,
+                        output_buffer_length: 15380,
+                        search_pattern: "*".into(),
+                    },
+                )
+                .await;
             let (_, response): (_, QueryDirectoryResponse<FileIdBothDirectoryInformation>) =
                 match res {
                     Ok(v) => v,
@@ -448,29 +473,36 @@ impl<TransportT: Transport> Client<TransportT> {
         Ok(output)
     }
 
-    pub fn write(&mut self, file_id: FileId, offset: u64, data: Vec<u8>) -> Result<u32> {
-        let (_, response): (_, WriteResponse) = self.auth_client.request(
-            Some(self.tree_id),
-            Credits(1),
-            Credits(64),
-            WriteRequest {
-                file_id,
-                offset,
-                channel: Channel::None,
-                remaining_bytes: 0,
-                flags: WriteFlags::empty(),
-                data,
-                channel_data: vec![],
-            },
-        )?;
+    pub async fn write(&mut self, file_id: FileId, offset: u64, data: Vec<u8>) -> Result<u32> {
+        let (_, response): (_, WriteResponse) = self
+            .auth_client
+            .request(
+                Some(self.tree_id),
+                Credits(1),
+                Credits(64),
+                WriteRequest {
+                    file_id,
+                    offset,
+                    channel: Channel::None,
+                    remaining_bytes: 0,
+                    flags: WriteFlags::empty(),
+                    data,
+                    channel_data: vec![],
+                },
+            )
+            .await?;
         Ok(response.count)
     }
 
-    pub fn write_all(&mut self, file_id: FileId, mut source: impl io::Read) -> Result<()> {
+    pub async fn write_all(
+        &mut self,
+        file_id: FileId,
+        mut source: impl io::AsyncRead + Unpin,
+    ) -> Result<()> {
         let mut offset = 0;
         loop {
             let mut buf = vec![0; IO_SIZE];
-            let amount_read = source.read(&mut buf[..])?;
+            let amount_read = source.read(&mut buf[..]).await?;
             if amount_read == 0 {
                 break;
             }
@@ -478,7 +510,7 @@ impl<TransportT: Transport> Client<TransportT> {
             buf.resize(amount_read, 0);
 
             while !buf.is_empty() {
-                let count = self.write(file_id, offset, buf.clone())?;
+                let count = self.write(file_id, offset, buf.clone()).await?;
                 buf = buf[count as usize..].to_owned();
             }
 
@@ -487,34 +519,41 @@ impl<TransportT: Transport> Client<TransportT> {
         Ok(())
     }
 
-    pub fn read(&mut self, file_id: FileId, offset: u64, count: u32) -> Result<Vec<u8>> {
-        let (_, response): (_, ReadResponse) = self.auth_client.request(
-            Some(self.tree_id),
-            Credits(1),
-            Credits(9),
-            ReadRequest {
-                padding: 0,
-                flags: ReadFlags::empty(),
-                length: count,
-                offset,
-                file_id,
-                minimum_bytes: 0,
-                channel: Channel::None,
-                remaining_bytes: 0,
-                // this can't be empty for some reason
-                channel_data: vec![0],
-            },
-        )?;
+    pub async fn read(&mut self, file_id: FileId, offset: u64, count: u32) -> Result<Vec<u8>> {
+        let (_, response): (_, ReadResponse) = self
+            .auth_client
+            .request(
+                Some(self.tree_id),
+                Credits(1),
+                Credits(9),
+                ReadRequest {
+                    padding: 0,
+                    flags: ReadFlags::empty(),
+                    length: count,
+                    offset,
+                    file_id,
+                    minimum_bytes: 0,
+                    channel: Channel::None,
+                    remaining_bytes: 0,
+                    // this can't be empty for some reason
+                    channel_data: vec![0],
+                },
+            )
+            .await?;
         Ok(response.data)
     }
 
-    pub fn read_all(&mut self, file_id: FileId, mut sink: impl io::Write) -> Result<()> {
+    pub async fn read_all(
+        &mut self,
+        file_id: FileId,
+        mut sink: impl io::AsyncWrite + Unpin,
+    ) -> Result<()> {
         let mut offset = 0;
         loop {
-            match self.read(file_id, offset, IO_SIZE as u32) {
+            match self.read(file_id, offset, IO_SIZE as u32).await {
                 Ok(read_data) => {
                     offset += read_data.len() as u64;
-                    sink.write_all(&read_data)?;
+                    sink.write_all(&read_data).await?;
                 }
                 Err(Error::NtStatus(NtStatus::EndOfFile)) => break,
                 Err(e) => return Err(e),
@@ -523,83 +562,97 @@ impl<TransportT: Transport> Client<TransportT> {
         Ok(())
     }
 
-    pub fn query_info<Info: DeserializeOwned + HasFileInformationClass>(
+    pub async fn query_info<Info: DeserializeOwned + HasFileInformationClass>(
         &mut self,
         file_id: FileId,
     ) -> Result<Info> {
-        let (_, response): (_, QueryInfoResponse<Info>) = self.auth_client.request(
-            Some(self.tree_id),
-            Credits(1),
-            Credits(64),
-            QueryInfoRequest {
-                info_type: InfoType::File,
-                file_info_class: Info::file_information_class(),
-                output_buffer_length: 8293,
-                additional_information: 0,
-                flags: QueryInfoFlags::empty(),
-                file_id,
-                buffer: vec![],
-            },
-        )?;
+        let (_, response): (_, QueryInfoResponse<Info>) = self
+            .auth_client
+            .request(
+                Some(self.tree_id),
+                Credits(1),
+                Credits(64),
+                QueryInfoRequest {
+                    info_type: InfoType::File,
+                    file_info_class: Info::file_information_class(),
+                    output_buffer_length: 8293,
+                    additional_information: 0,
+                    flags: QueryInfoFlags::empty(),
+                    file_id,
+                    buffer: vec![],
+                },
+            )
+            .await?;
         Ok(response.info)
     }
 
-    pub fn close(&mut self, file_id: FileId) -> Result<CloseResponse> {
-        let (_, response): (_, CloseResponse) = self.auth_client.request(
-            Some(self.tree_id),
-            Credits(1),
-            Credits(64),
-            CloseRequest {
-                flags: CloseFlags::empty(),
-                file_id,
-            },
-        )?;
+    pub async fn close(&mut self, file_id: FileId) -> Result<CloseResponse> {
+        let (_, response): (_, CloseResponse) = self
+            .auth_client
+            .request(
+                Some(self.tree_id),
+                Credits(1),
+                Credits(64),
+                CloseRequest {
+                    flags: CloseFlags::empty(),
+                    file_id,
+                },
+            )
+            .await?;
         Ok(response)
     }
 
-    pub fn flush(&mut self, file_id: FileId) -> Result<()> {
-        let (_, _response): (_, FlushResponse) = self.auth_client.request(
-            Some(self.tree_id),
-            Credits(1),
-            Credits(64),
-            FlushRequest { file_id },
-        )?;
+    pub async fn flush(&mut self, file_id: FileId) -> Result<()> {
+        let (_, _response): (_, FlushResponse) = self
+            .auth_client
+            .request(
+                Some(self.tree_id),
+                Credits(1),
+                Credits(64),
+                FlushRequest { file_id },
+            )
+            .await?;
         Ok(())
     }
 
-    pub fn set_info<Info: Serialize + HasFileInformationClass>(
+    pub async fn set_info<Info: Serialize + HasFileInformationClass>(
         &mut self,
         file_id: FileId,
         info: Info,
     ) -> Result<()> {
-        let (_, _response): (_, SetInfoResponse) = self.auth_client.request(
-            Some(self.tree_id),
-            Credits(1),
-            Credits(64),
-            SetInfoRequest {
-                info_type: InfoType::File,
-                file_info_class: Info::file_information_class(),
-                additional_information: 0,
-                file_id,
-                info,
-            },
-        )?;
+        let (_, _response): (_, SetInfoResponse) = self
+            .auth_client
+            .request(
+                Some(self.tree_id),
+                Credits(1),
+                Credits(64),
+                SetInfoRequest {
+                    info_type: InfoType::File,
+                    file_info_class: Info::file_information_class(),
+                    additional_information: 0,
+                    file_id,
+                    info,
+                },
+            )
+            .await?;
         Ok(())
     }
 
-    pub fn rename(&mut self, file_id: FileId, path: impl AsRef<Path>) -> Result<()> {
+    pub async fn rename(&mut self, file_id: FileId, path: impl AsRef<Path>) -> Result<()> {
         self.set_info(
             file_id,
             FileRenameInformation {
                 replace_if_exists: false,
                 path: path_str(path),
             },
-        )?;
+        )
+        .await?;
         Ok(())
     }
 
-    pub fn resize(&mut self, file_id: FileId, size: i64) -> Result<()> {
-        self.set_info(file_id, FileEndOfFileInformation { end_of_file: size })?;
+    pub async fn resize(&mut self, file_id: FileId, size: i64) -> Result<()> {
+        self.set_info(file_id, FileEndOfFileInformation { end_of_file: size })
+            .await?;
         Ok(())
     }
 }

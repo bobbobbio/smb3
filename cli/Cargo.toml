@@ -9,6 +9,7 @@ license = "MIT"
 [dependencies]
 chrono = "^0.4"
 clap = { version = "4", features = ["derive"] }
-indicatif = "^0.17"
+indicatif = { version = "^0.17", features = ["tokio"] }
 smb3 = { version = "^0.1", path = "../smb3" }
 smb3_client = { version = "^0.1", path = "../smb3_client" }
+tokio = { version = "1.38", features = ["fs", "io-util", "net", "rt", "rt-multi-thread", "macros"] }
