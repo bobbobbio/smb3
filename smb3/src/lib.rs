@@ -41,7 +41,7 @@ pub trait HasCommand {
 }
 
 #[bitfield]
-#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Default, Debug, Serialize, Deserialize)]
 pub struct HeaderFlags {
     pub response: bool,
     pub r#async: bool,

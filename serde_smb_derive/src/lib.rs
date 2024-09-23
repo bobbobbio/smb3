@@ -1,5 +1,8 @@
 // copyright 2023 Remi Bernotavicius
 
+// for some reason darling is triggering this
+#![allow(clippy::manual_unwrap_or_default)]
+
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{
