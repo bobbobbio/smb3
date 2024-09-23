@@ -2,6 +2,7 @@ use sspi_bobbobbio as sspi;
 
 use cmac::Mac as _;
 use derive_more::From;
+use rand::rngs::OsRng;
 use rand::Rng as _;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sha2::Digest as _;
@@ -13,7 +14,6 @@ use sspi::{
 };
 use std::mem;
 use std::path::{Component, Path};
-use rand::rngs::OsRng;
 use tokio::io::{self, AsyncReadExt as _, AsyncWriteExt as _};
 
 pub const PORT: u16 = 445;
@@ -40,7 +40,7 @@ struct UnauthenticatedClient<TransportT> {
     pre_auth_hash: Vec<u8>,
 }
 
-type SignatureFuncRef<'a> = &'a mut (dyn FnMut(&[u8]) -> Result<Signature>+Send);
+type SignatureFuncRef<'a> = &'a mut (dyn FnMut(&[u8]) -> Result<Signature> + Send);
 
 impl<TransportT: Transport> UnauthenticatedClient<TransportT> {
     fn new(transport: TransportT) -> Self {
