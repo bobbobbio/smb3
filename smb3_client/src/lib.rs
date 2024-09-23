@@ -13,6 +13,7 @@ use sspi::{
 };
 use std::mem;
 use std::path::{Component, Path};
+use rand::rngs::OsRng;
 use tokio::io::{self, AsyncReadExt as _, AsyncWriteExt as _};
 
 pub const PORT: u16 = 445;
@@ -39,7 +40,7 @@ struct UnauthenticatedClient<TransportT> {
     pre_auth_hash: Vec<u8>,
 }
 
-type SignatureFuncRef<'a> = &'a mut dyn FnMut(&[u8]) -> Result<Signature>;
+type SignatureFuncRef<'a> = &'a mut (dyn FnMut(&[u8]) -> Result<Signature>+Send);
 
 impl<TransportT: Transport> UnauthenticatedClient<TransportT> {
     fn new(transport: TransportT) -> Self {
@@ -126,12 +127,14 @@ impl<TransportT: Transport> UnauthenticatedClient<TransportT> {
     }
 
     async fn negotiate(&mut self) -> Result<()> {
-        let mut rng = rand::thread_rng();
+        let mut rng = OsRng;
         let pre_auth_salt = rng.gen::<[u8; 32]>().to_vec();
+        let uuid = Uuid::new(&mut rng);
+
         let request = NegotiateRequest {
             security_mode: SecurityMode::SIGNING_ENABLED,
             capabilities: Capabilities::empty(),
-            client_guid: Uuid::new(&mut rng),
+            client_guid: uuid,
             dialects: vec![Dialect::Smb3_1_1],
             negotiate_contexts: vec![NegotiateContext::Smb2PreauthIntegrityCapabilities(
                 Smb2PreauthIntegrityCapabilities {
